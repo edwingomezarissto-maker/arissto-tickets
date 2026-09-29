@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ARISSTO Control de Soporte</title>
+    <script>
+      try {
+        if (localStorage.getItem("arisstoTheme") === "dark") {
+          document.documentElement.dataset.theme = "dark";
+        }
+      } catch (error) {
+        document.documentElement.removeAttribute("data-theme");
+      }
+    </script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <section class="access-screen" id="accessScreen" aria-labelledby="accessTitle">
+      <div class="access-panel">
+        <img src="assets/logo-sst.jpeg" alt="SST" class="access-logo" />
+        <h1>ARISSTO Control de Soporte</h1>
+        <h2 id="accessTitle">Ingresar a mi cuenta</h2>
+        <p id="accessMessage" role="status">Cargando acceso seguro...</p>
+        <form id="loginForm" hidden>
+          <label>Usuario<input type="text" id="loginEmail" autocomplete="username" pattern="[A-Za-z0-9._-]{3,40}" required /></label>
+          <label>Contrasena<input type="password" id="loginPassword" autocomplete="current-password" required /></label>
+          <button class="primary-button" type="submit">Ingresar</button>
+          <p>Si olvido su contrasena, solicite a Edwin Gomez que la restablezca.</p>
+        </form>
+        <form id="passwordForm" hidden>
+          <label>Usuario actual<input type="text" id="profileUsername" autocomplete="username" pattern="[A-Za-z0-9._-]{3,40}" required /></label>
+          <label>Nueva contrasena<input type="password" id="newPassword" autocomplete="new-password" minlength="3" maxlength="128" required /></label>
+          <label>Confirmar contrasena<input type="password" id="confirmPassword" autocomplete="new-password" minlength="3" maxlength="128" required /></label>
+          <button class="primary-button" type="submit">Guardar cambios</button>
+        </form>
+        <noscript>Active JavaScript para ingresar a la aplicacion.</noscript>
+      </div>
+    </section>
+    <div class="app-shell" id="appShell" hidden>
+      <header class="topbar">
+        <div class="brand-area">
+          <img src="assets/logo-sst.jpeg" alt="SST Soluciones y Servicios Tecnológicos" />
+          <div>
+            <h1>ARISSTO Control de Soporte</h1>
+            <p>Control simple de casos de soporte al cliente.</p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">
+            <span class="toggle-mark" aria-hidden="true"></span>
+            <span id="themeToggleText">Modo oscuro</span>
+          </button>
+          <button class="secondary-button" id="openCreateTask" type="button">Crear tarea</button>
+          <button class="primary-button" id="openCreateCase" type="button">Crear caso</button>
+        </div>
+      </header>
+
+      <div class="account-bar">
+        <span id="sessionLabel">Version local</span>
+        <span id="syncStatus" role="status"></span>
+        <button class="secondary-button" id="refreshCloud" type="button" hidden>Actualizar</button>
+        <button class="secondary-button" id="changePassword" type="button" hidden>Cambiar contrasena</button>
+        <button class="secondary-button" id="logoutButton" type="button" hidden>Cerrar sesion</button>
+      </div>
+
+      <nav class="app-tabs" aria-label="Navegacion principal">
+        <button class="tab-button active" type="button" data-tab-target="dashboardSection">Dashboard</button>
+        <button class="tab-button" type="button" data-tab-target="graphicDashboardSection">Dashboard gráfico</button>
+        <button class="tab-button" type="button" data-tab-target="casesSection">Casos de soporte</button>
+        <button class="tab-button" type="button" data-tab-target="tasksSection">Tareas</button>
+        <button class="tab-button" type="button" data-tab-target="cooperativesSection">Cooperativas</button>
+        <button class="tab-button" type="button" data-tab-target="migrationSection">Migracion</button>
+        <button class="tab-button" id="usersTab" type="button" data-tab-target="usersSection" hidden>Usuarios</button>
+      </nav>
+
+      <main>
+        <section class="section-block tab-panel" id="usersSection" aria-labelledby="usersTitle">
+          <div class="section-heading"><h2 id="usersTitle">Usuarios</h2></div>
+          <p id="usersMessage" role="status"></p>
+          <form id="userForm" class="user-form">
+            <input type="hidden" id="editUserId" />
+            <label>Nombre<input type="text" id="userName" maxlength="150" autocomplete="off" required /></label>
+            <label>Usuario<input type="text" id="userUsername" pattern="[A-Za-z0-9._-]{3,40}" autocomplete="off" required /></label>
+            <label><span id="userPasswordLabel">Contrasena inicial (minimo 3 caracteres)</span><input type="password" id="userPassword" autocomplete="new-password" minlength="3" maxlength="128" required /></label>
+            <div class="section-actions">
+              <button class="primary-button" id="saveUserButton" type="submit">Crear usuario</button>
+              <button class="secondary-button" id="cancelUserEdit" type="button" hidden>Cancelar</button>
+            </div>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Acceso</th><th>Acciones</th></tr></thead><tbody id="usersBody"></tbody></table></div>
+        </section>
+        <section class="section-block tab-panel active" id="dashboardSection" aria-labelledby="dashboardTitle">
+          <div class="section-heading">
+            <h2 id="dashboardTitle">Dashboard</h2>
+          </div>
+
+          <div class="dashboard-grid" aria-label="Resumen de casos">
+            <article class="metric-card">
+              <span class="metric-label">Casos abiertos</span>
+              <strong id="countOpen">0</strong>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">Casos en proceso</span>
+              <strong id="countInProgress">0</strong>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">Casos en espera</span>
+              <strong id="countWaiting">0</strong>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">Casos finalizados</span>
+              <strong id="countFinished">0</strong>
+            </article>
+            <article class="metric-card overdue-card">
+              <span class="metric-label">Casos vencidos</span>
+              <strong id="countOverdue">0</strong>
+            </article>
+          </div>
+
+        </section>
+
+        <section class="section-block tab-panel" id="graphicDashboardSection" aria-labelledby="graphicDashboardTitle">
+          <div class="graphic-dashboard-header">
+            <div>
+              <h2 id="graphicDashboardTitle">Dashboard gráfico</h2>
+              <p>Vista ejecutiva de casos activos, prioridades y seguimiento operativo.</p>
+            </div>
+            <div class="graphic-dashboard-tools">
+              <label>
+                <span>Mes</span>
+                <select id="dashboardMonthFilter"></select>
+              </label>
+              <p class="last-update">Última actualización: <span id="dashboardUpdatedAt">Sin datos</span></p>
+            </div>
+          </div>
+
+          <div class="empty-state chart-empty-state" id="chartEmptyState">
+            No hay datos suficientes para generar gráficos.
+          </div>
+
+          <div class="graphic-dashboard-content" id="graphicDashboardContent">
+            <div class="graphic-kpi-grid" aria-label="Indicadores del dashboard gráfico">
+              <article class="graphic-kpi-card">
+                <span>Casos activos</span>
+                <strong id="visualActiveCases">0</strong>
+                <small>Abiertos, en proceso o en espera</small>
+              </article>
+              <article class="graphic-kpi-card">
+                <span>Alta prioridad</span>
+                <strong id="visualHighPriorityCases">0</strong>
+                <small>Casos que requieren atención</small>
+              </article>
+              <article class="graphic-kpi-card warning">
+                <span>Casos vencidos</span>
+                <strong id="visualOverdueCases">0</strong>
+                <small>Compromisos fuera de fecha</small>
+              </article>
+              <article class="graphic-kpi-card success">
+                <span>Finalizados</span>
+                <strong id="visualFinishedCases">0</strong>
+                <small>Casos cerrados</small>
+              </article>
+              <article class="graphic-kpi-card total">
+                <span>Total de casos</span>
+                <strong id="visualTotalCases">0</strong>
+                <small>Registrados en el sistema</small>
+              </article>
+            </div>
+
+            <div class="chart-grid">
+              <article class="chart-card">
+                <div class="chart-card-header">
+                  <h3>Casos por estado</h3>
+                  <span>Total: <strong id="statusChartTotal">0</strong></span>
+                </div>
+                <div class="chart-canvas">
+                  <canvas id="statusChart"></canvas>
+                </div>
+              </article>
+
+              <article class="chart-card">
+                <div class="chart-card-header">
+                  <h3>Casos por prioridad</h3>
+                  <span>Total: <strong id="priorityChartTotal">0</strong></span>
+                </div>
+                <div class="chart-canvas">
+                  <canvas id="priorityChart"></canvas>
+                </div>
+              </article>
+
+              <article class="chart-card">
+                <div class="chart-card-header">
+                  <h3>Casos por encargado</h3>
+                  <span>Total: <strong id="ownerChartTotal">0</strong></span>
+                </div>
+                <div class="chart-canvas">
+                  <canvas id="ownerChart"></canvas>
+                </div>
+              </article>
+
+              <article class="chart-card">
+                <div class="chart-card-header">
+                  <h3>Casos por fecha de solicitud</h3>
+                  <span>Total: <strong id="requestDateChartTotal">0</strong></span>
+                </div>
+                <div class="chart-canvas">
+                  <canvas id="requestDateChart"></canvas>
+                </div>
+              </article>
+            </div>
+
+            <div class="graphic-bottom-grid">
+              <article class="chart-card due-summary-card">
+                <div class="chart-card-header">
+                  <h3>Control de vencimiento</h3>
+                </div>
+                <div class="due-summary-grid">
+                  <div class="due-summary-item danger">
+                    <span>Casos vencidos</span>
+                    <strong id="dueOverdueCount">0</strong>
+                    <small>Compromisos fuera de fecha</small>
+                  </div>
+                  <div class="due-summary-item today">
+                    <span>Compromisos para hoy</span>
+                    <strong id="dueTodayCount">0</strong>
+                    <small>Vencen hoy</small>
+                  </div>
+                  <div class="due-summary-item next">
+                    <span>Próximos a vencer</span>
+                    <strong id="dueSoonCount">0</strong>
+                    <small>Dentro de los próximos 7 días</small>
+                  </div>
+                </div>
+              </article>
+
+              <article class="chart-card recent-card">
+                <div class="chart-card-header">
+                  <h3>Últimos casos registrados</h3>
+                </div>
+                <ul class="recent-cases" id="recentCasesList"></ul>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-block tab-panel" id="casesSection" aria-labelledby="casesTitle">
+          <div class="section-heading cases-heading">
+            <div>
+              <h2 id="casesTitle">Casos de soporte</h2>
+              <p id="caseTotalLabel">0 casos registrados</p>
+            </div>
+            <div class="section-actions">
+              <button class="secondary-button desktop-create" id="openCreateTaskSecondary" type="button">Crear tarea</button>
+              <button class="primary-button desktop-create" id="openCreateCaseSecondary" type="button">Crear caso</button>
+            </div>
+          </div>
+
+          <div class="filters" aria-label="Filtros de casos">
+            <label>
+              <span>Buscar</span>
+              <input
+                type="search"
+                id="searchInput"
+                placeholder="Caso, cooperativa o solicitante"
+                autocomplete="off"
+              />
+            </label>
+            <label>
+              <span>Estado</span>
+              <select id="statusFilter">
+                <option value="active" selected>Todos menos finalizados</option>
+                <option value="">Todos</option>
+                <option value="Abierto">Abierto</option>
+                <option value="En proceso">En proceso</option>
+                <option value="En espera">En espera</option>
+                <option value="Finalizado">Finalizado</option>
+              </select>
+            </label>
+            <label>
+              <span>Prioridad</span>
+              <select id="priorityFilter">
+                <option value="">Todas</option>
+                <option value="Baja">Baja</option>
+                <option value="Media">Media</option>
+                <option value="Alta">Alta</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Caso</th>
+                  <th>Cooperativa</th>
+                  <th>Solicitante</th>
+                  <th>Telefono</th>
+                  <th>Encargado</th>
+                  <th>Estado</th>
+                  <th>Prioridad</th>
+                  <th>Fecha de solicitud</th>
+                  <th>Fecha de compromiso</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="casesTableBody"></tbody>
+            </table>
+            <div class="empty-state" id="emptyState">
+              No hay casos de soporte registrados. Cree su primer caso.
+            </div>
+          </div>
+        </section>
+
+        <section class="section-block tab-panel" id="tasksSection" aria-labelledby="tasksTitle">
+          <div class="section-heading cases-heading">
+            <div>
+              <h2 id="tasksTitle">Tareas</h2>
+              <p id="taskTotalLabel">0 tareas registradas</p>
+            </div>
+            <button class="primary-button desktop-create" id="openCreateTaskTertiary" type="button">Crear tarea</button>
+          </div>
+
+          <div class="table-wrap">
+            <table class="tasks-table">
+              <thead>
+                <tr>
+                  <th>Tarea</th>
+                  <th>Encargado</th>
+                  <th>Qué se ha hecho</th>
+                  <th>Detalles adicionales</th>
+                  <th>Fecha de creación</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tasksTableBody"></tbody>
+            </table>
+            <div class="empty-state" id="tasksEmptyState">
+              No hay tareas registradas. Cree su primera tarea.
+            </div>
+          </div>
+        </section>
+
+
+        <section class="section-block tab-panel" id="migrationSection" aria-labelledby="migrationTitle">
+          <div class="section-heading">
+            <div>
+              <h2 id="migrationTitle">Importacion y exportacion</h2>
+              <p>Respalde o traslade casos y tareas mediante archivos JSON.</p>
+            </div>
+          </div>
+
+          <div class="migration-grid">
+            <article class="migration-card">
+              <h3>Exportar informacion</h3>
+              <p>Descarga un archivo con los casos y tareas visibles en esta cuenta.</p>
+              <div class="migration-actions">
+                <button class="primary-button" id="exportCasesTasks" type="button">Exportar casos y tareas</button>
+              </div>
+            </article>
+
+            <article class="migration-card">
+              <h3>Importar informacion</h3>
+              <p>Seleccione un archivo exportado por ARISSTO. Puede combinarlo con los datos actuales o reemplazarlos.</p>
+              <label>
+                <span>Archivo JSON</span>
+                <input type="file" id="importFile" accept="application/json,.json" />
+              </label>
+              <label>
+                <span>Modo de importacion</span>
+                <select id="importMode">
+                  <option value="merge">Combinar con datos actuales</option>
+                  <option value="replace">Reemplazar casos y tareas actuales</option>
+                </select>
+              </label>
+              <div class="migration-actions">
+                <button class="primary-button" id="importCasesTasks" type="button">Importar archivo</button>
+              </div>
+              <p class="migration-note">Al combinar, si un registro ya existe se conserva el actual y se agregan solo los nuevos.</p>
+            </article>
+          </div>
+          <div class="alert" id="migrationAlert" role="alert"></div>
+          <p class="migration-status" id="migrationStatus" role="status"></p>
+        </section>        <section class="section-block tab-panel" id="cooperativesSection" aria-labelledby="cooperativesTitle">
+          <div class="section-heading">
+            <div>
+              <h2 id="cooperativesTitle">Cooperativas</h2>
+              <p id="cooperativeTotalLabel">0 cooperativas registradas</p>
+            </div>
+          </div>
+
+          <div class="cooperative-layout">
+            <aside class="cooperative-list-panel">
+              <div class="database-form">
+                <h3>Lista de cooperativas</h3>
+                <p>Seleccione una cooperativa para editarla o agregar personas.</p>
+
+                <div class="alert" id="cooperativeAlert" role="alert"></div>
+
+                <form id="cooperativeForm" novalidate>
+                  <input type="hidden" id="cooperativeId" />
+                  <label>
+                    <span>Nombre de la cooperativa</span>
+                    <input type="text" id="cooperativeName" data-label="Nombre de la cooperativa" required />
+                    <small class="field-error"></small>
+                  </label>
+                  <div class="database-actions">
+                    <button class="secondary-button hidden" type="button" id="cancelCooperativeEdit">Cancelar edicion</button>
+                    <button class="primary-button" type="submit" id="saveCooperativeButton">Guardar cooperativa</button>
+                  </div>
+                </form>
+              </div>
+
+              <label class="cooperative-search">
+                <span>Buscar cooperativa</span>
+                <input type="search" id="cooperativeSearch" placeholder="Ej: cre" autocomplete="off" />
+              </label>
+
+              <div class="cooperative-list" id="cooperativeList"></div>
+              <div class="empty-state" id="cooperativesEmptyState">
+                No hay cooperativas registradas.
+              </div>
+            </aside>
+
+            <section class="contact-panel" aria-labelledby="selectedCooperativeTitle">
+              <div class="contact-panel-heading">
+                <div>
+                  <h3 id="selectedCooperativeTitle">Seleccione una cooperativa</h3>
+                  <p id="selectedCooperativeHelp">Al seleccionar una cooperativa podra agregar personas, telefono y cargo.</p>
+                </div>
+              </div>
+
+              <div class="alert" id="contactAlert" role="alert"></div>
+
+              <form id="contactForm" novalidate>
+                <input type="hidden" id="contactId" />
+                <fieldset id="contactFieldset" disabled>
+                  <div class="contact-form-grid">
+                    <label>
+                      <span>Persona</span>
+                      <input type="text" id="contactName" data-label="Persona" required />
+                      <small class="field-error"></small>
+                    </label>
+                    <label>
+                      <span>Telefono</span>
+                      <input type="tel" id="contactPhone" data-label="Telefono" required />
+                      <small class="field-error"></small>
+                    </label>
+                    <label>
+                      <span>Cargo (opcional)</span>
+                      <input type="text" id="contactPosition" data-label="Cargo" />
+                    </label>
+                  </div>
+                  <div class="database-actions">
+                    <button class="secondary-button hidden" type="button" id="cancelContactEdit">Cancelar edicion</button>
+                    <button class="primary-button" type="submit" id="saveContactButton">Guardar persona</button>
+                  </div>
+                </fieldset>
+              </form>
+
+              <div class="table-wrap contact-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Persona</th>
+                      <th>Cargo</th>
+                      <th>Telefono</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="contactsTableBody"></tbody>
+                </table>
+                <div class="empty-state" id="contactsEmptyState">
+                  Seleccione una cooperativa para ver sus personas.
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="caseModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="caseModalTitle">
+        <div class="modal-header">
+          <div>
+            <h2 id="caseModalTitle">Crear caso</h2>
+            <p>Complete los campos obligatorios para guardar el caso.</p>
+          </div>
+          <button class="icon-button" type="button" data-close-modal aria-label="Cerrar">×</button>
+        </div>
+
+        <div class="alert" id="formAlert" role="alert"></div>
+
+        <form id="caseForm" novalidate>
+          <input type="hidden" id="caseId" />
+          <div class="form-grid">
+            <label>
+              <span>Caso / Pendiente</span>
+              <input type="text" id="caseTitle" data-label="Caso / Pendiente" required />
+              <small class="field-error"></small>
+            </label>
+            <label>
+              <span>Cooperativa</span>
+              <input type="text" id="cooperative" data-label="Cooperativa" list="cooperativeOptions" required />
+              <small class="field-error"></small>
+            </label>
+            <label>
+              <span>Persona que solicito soporte</span>
+              <input type="text" id="requester" data-label="Persona que solicito soporte" list="requesterOptions" required />
+              <small class="field-error"></small>
+            </label>
+            <label>
+              <span>Telefono</span>
+              <input type="tel" id="requesterPhone" data-label="Telefono" required />
+              <small class="field-error"></small>
+            </label>
+            <label>
+              <span>Cargo (opcional)</span>
+              <input type="text" id="requesterPosition" data-label="Cargo" />
+            </label>
+            <label>
+              <span>Encargado</span>
+              <input type="text" id="owner" data-label="Encargado" required />
+              <small class="field-error"></small>
+            </label>
+            <label id="caseAccountLabel" hidden>
+              <span>Cuenta asignada</span>
+              <select id="caseAccount"></select>
+            </label>
+            <label>
+              <span>Estado</span>
+              <select id="status" data-label="Estado" required>
+                <option value="">Seleccione</option>
+                <option value="Abierto">Abierto</option>
+                <option value="En proceso">En proceso</option>
+                <option value="En espera">En espera</option>
+                <option value="Finalizado">Finalizado</option>
+              </select>
+              <small class="field-error"></small>
+            </label>
+            <label>
+              <span>Prioridad</span>
+              <select id="priority" data-label="Prioridad" required>
+                <option value="">Seleccione</option>
+                <option value="Baja">Baja</option>
+                <option value="Media">Media</option>
+                <option value="Alta">Alta</option>
+              </select>
+              <small class="field-error"></small>
+            </label>
+            <label>
+              <span>Fecha de solicitud</span>
+              <input type="date" id="requestDate" data-label="Fecha de solicitud" required />
+              <small class="field-error"></small>
+            </label>
+            <label>
+              <span>Fecha de compromiso (opcional)</span>
+              <input type="date" id="commitmentDate" data-label="Fecha de compromiso" />
+              <small class="field-error"></small>
+            </label>
+          </div>
+
+          <label class="full-field">
+            <span>Qué está solicitando el cliente</span>
+            <textarea id="clientRequest" data-label="Qué está solicitando el cliente" rows="4" required></textarea>
+            <small class="field-error"></small>
+          </label>
+
+          <label class="full-field">
+            <span>Qué se está haciendo / proceso actual</span>
+            <textarea id="currentProcess" data-label="Qué se está haciendo / proceso actual" rows="4" required></textarea>
+            <small class="field-error"></small>
+          </label>
+
+          <label class="full-field">
+            <span>Observaciones adicionales</span>
+            <textarea id="observations" rows="3"></textarea>
+          </label>
+
+          <div class="modal-actions">
+            <button class="secondary-button" type="button" data-close-modal>Cancelar</button>
+            <button class="primary-button" type="submit">Guardar caso</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="detailModal" aria-hidden="true">
+      <section class="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+        <div class="modal-header">
+          <div>
+            <h2 id="detailTitle">Detalle del caso</h2>
+            <p>Información completa del caso seleccionado.</p>
+          </div>
+          <button class="icon-button" type="button" data-close-detail aria-label="Cerrar">×</button>
+        </div>
+        <div class="detail-grid" id="detailContent"></div>
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" data-close-detail>Cerrar</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="processModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="processTitle">
+        <div class="modal-header">
+          <div>
+            <h2 id="processTitle">Actualizar proceso</h2>
+            <p>Modifique el proceso actual y las observaciones del caso.</p>
+          </div>
+          <button class="icon-button" type="button" data-close-process aria-label="Cerrar">×</button>
+        </div>
+
+        <div class="alert" id="processAlert" role="alert"></div>
+
+        <form id="processForm" novalidate>
+          <input type="hidden" id="processCaseId" />
+          <label class="full-field">
+            <span>Qué se está haciendo / proceso actual</span>
+            <textarea id="processUpdate" data-label="Qué se está haciendo / proceso actual" rows="5" required></textarea>
+            <small class="field-error"></small>
+          </label>
+          <label class="full-field">
+            <span>Observaciones adicionales</span>
+            <textarea id="processObservations" rows="4"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button class="secondary-button" type="button" data-close-process>Cancelar</button>
+            <button class="primary-button" type="submit">Guardar actualización</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="taskModal" aria-hidden="true">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
+        <div class="modal-header">
+          <div>
+            <h2 id="taskModalTitle">Crear tarea</h2>
+            <p>Complete Tarea y Encargado para guardar.</p>
+          </div>
+          <button class="icon-button" type="button" data-close-task aria-label="Cerrar">×</button>
+        </div>
+
+        <div class="alert" id="taskAlert" role="alert"></div>
+
+        <form id="taskForm" novalidate>
+          <input type="hidden" id="taskId" />
+          <label>
+            <span>Tarea</span>
+            <input type="text" id="taskTitle" data-label="Tarea" required />
+            <small class="field-error"></small>
+          </label>
+          <label>
+            <span>Encargado</span>
+            <input type="text" id="taskOwner" data-label="Encargado" required />
+            <small class="field-error"></small>
+          </label>
+          <label id="taskAccountLabel" hidden>
+            <span>Cuenta asignada</span>
+            <select id="taskAccount"></select>
+          </label>
+          <label>
+            <span>Qué se ha hecho</span>
+            <textarea id="taskProgress" rows="4"></textarea>
+          </label>
+          <label>
+            <span>Detalles adicionales</span>
+            <textarea id="taskDetails" rows="4"></textarea>
+          </label>
+
+          <div class="modal-actions">
+            <button class="secondary-button" type="button" data-close-task>Cancelar</button>
+            <button class="primary-button" type="submit">Guardar tarea</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <datalist id="cooperativeOptions"></datalist>
+    <datalist id="requesterOptions"></datalist>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="seed-data.js"></script>
+    <script src="app.js"></script>
+    <script src="assets/account.js"></script>
+  </body>
+</html>
+
+

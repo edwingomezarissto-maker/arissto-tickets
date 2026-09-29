@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.netlify/
+.env
+.env.*
+assets/account.js
+qa-output/
+
+seed-data.js
+importaciones/
