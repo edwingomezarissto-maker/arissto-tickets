@@ -1,19 +1,38 @@
 // This secret is set only in Netlify's private environment, never in a public asset.
+const INITIAL_ADMIN = {
+  email: 'egomez@arissto.invalid',
+  fullName: 'Edwin Gomez',
+  username: 'EGOMEZ',
+};
+
 export async function ensureInitialAdmin({ password, admin, getStore }) {
   if (!password) return;
   const store = getStore({ name: 'arissto-support-v1', consistency: 'strong' });
-  if (await store.get('initial-admin', { type: 'json' })) return;
-  const email = 'egomez@arissto.invalid';
   let existing;
   for (let page = 1; ; page++) {
     const batch = await admin.listUsers({ page, perPage: 100 });
-    existing = batch.find(user => user.email?.toLowerCase() === email);
+    existing = batch.find(user => user.email?.toLowerCase() === INITIAL_ADMIN.email);
     if (existing || batch.length < 100) break;
   }
-  if (existing && (!existing.roles?.includes('admin') || existing.appMetadata?.username !== 'EGOMEZ')) {
-    throw new Error('La cuenta inicial requiere revision en Netlify.');
+
+  let user = existing;
+  if (!user) {
+    user = await admin.createUser({ email: INITIAL_ADMIN.email, password,
+      data: { user_metadata: { full_name: INITIAL_ADMIN.fullName },
+        app_metadata: { roles: ['admin'], username: INITIAL_ADMIN.username } } });
+  } else {
+    const roles = new Set(user.roles || []);
+    roles.add('admin');
+    const currentName = user.userMetadata?.full_name || user.name || '';
+    const needsRepair = user.appMetadata?.username !== INITIAL_ADMIN.username ||
+      !roles.has('admin') || currentName !== INITIAL_ADMIN.fullName;
+    if (needsRepair) {
+      user = await admin.updateUser(user.id, {
+        user_metadata: { ...user.userMetadata, full_name: INITIAL_ADMIN.fullName },
+        app_metadata: { ...user.appMetadata, roles: [...roles], username: INITIAL_ADMIN.username },
+      });
+    }
   }
-  const user = existing || await admin.createUser({ email, password,
-    data: { user_metadata: { full_name: 'Edwin Gomez' }, app_metadata: { roles: ['admin'], username: 'EGOMEZ' } } });
-  await store.setJSON('initial-admin', { id: user.id }, { onlyIfNew: true });
+
+  await store.setJSON('initial-admin', { id: user.id });
 }

@@ -137,27 +137,43 @@ test('el administrador puede editar el perfil y restablecer una clave sin cambia
   assert.ok(!(await result.text()).includes('456'));
 });
 
-test('sin secreto privado no se crea administrador; activacion es idempotente y no publica la clave', async () => {
+test('sin secreto privado no se crea administrador; activacion crea EGOMEZ y actualiza el marcador', async () => {
   let calls = 0;
   let marker = null;
   let created;
+  const egomez = { ...root, id: 'egomez-root', email: 'egomez@arissto.invalid', roles: ['admin'], appMetadata: { username: 'EGOMEZ' } };
   const dependencies = { admin: { listUsers: async () => [], createUser: async value => {
-    calls++; created = value; return root;
+    calls++; created = value; return egomez;
   } }, getStore: () => ({ get: async () => marker, setJSON: async (_, value) => { marker = value; } }) };
   await ensureInitialAdmin({ ...dependencies });
   assert.equal(calls, 0);
   await ensureInitialAdmin({ ...dependencies, password: 'initial-test-password' });
-  await ensureInitialAdmin({ ...dependencies, password: 'initial-test-password' });
   assert.equal(calls, 1);
-  assert.equal(created.data.app_metadata.username, 'EdwinGomez');
-  assert.deepEqual(marker, { id: root.id });
+  assert.equal(created.email, 'egomez@arissto.invalid');
+  assert.equal(created.data.user_metadata.full_name, 'Edwin Gomez');
+  assert.equal(created.data.app_metadata.username, 'EGOMEZ');
+  assert.deepEqual(created.data.app_metadata.roles, ['admin']);
+  assert.deepEqual(marker, { id: 'egomez-root' });
 });
 
-test('activar la cuenta inicial no asciende a un registro preexistente sin autorizacion', async () => {
-  await assert.rejects(ensureInitialAdmin({ password: 'initial-test-password',
-    getStore: () => ({ get: async () => null }),
-    admin: { listUsers: async () => [{ ...a, email: 'edwingomez@arissto.invalid' }] },
-  }), /requiere revision/);
+test('activar la cuenta inicial repara EGOMEZ existente sin cambiar su contrasena', async () => {
+  let marker = null;
+  let updated;
+  const existing = { ...a, id: 'egomez-existing', email: 'egomez@arissto.invalid', roles: ['member'],
+    name: 'Nombre viejo', userMetadata: { full_name: 'Nombre viejo' }, appMetadata: { username: 'viejo' } };
+  await ensureInitialAdmin({ password: 'initial-test-password',
+    getStore: () => ({ get: async () => marker, setJSON: async (_, value) => { marker = value; } }),
+    admin: { listUsers: async () => [existing], updateUser: async (id, attributes) => {
+      updated = { id, attributes };
+      return { ...existing, roles: attributes.app_metadata.roles, userMetadata: attributes.user_metadata, appMetadata: attributes.app_metadata };
+    } },
+  });
+  assert.equal(updated.id, 'egomez-existing');
+  assert.equal(updated.attributes.password, undefined);
+  assert.equal(updated.attributes.user_metadata.full_name, 'Edwin Gomez');
+  assert.equal(updated.attributes.app_metadata.username, 'EGOMEZ');
+  assert.ok(updated.attributes.app_metadata.roles.includes('admin'));
+  assert.deepEqual(marker, { id: 'egomez-existing' });
 });
 
 
@@ -180,3 +196,4 @@ test('el usuario actual puede cambiar usuario y contrasena desde una sola fuente
   assert.equal(account.email, 'edwin@arissto.invalid');
   assert.equal(account.appMetadata.username, 'edwin');
 });
+
