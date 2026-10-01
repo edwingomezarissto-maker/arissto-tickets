@@ -7,6 +7,7 @@ const usernameEmail = username => username.toLowerCase() + '@arissto.invalid';
 const validPassword = value => typeof value === 'string' && value.length >= 3 && value.length <= 128;
 const permitted = user => user && (isAdmin(user) || user.roles?.includes('member'));
 const LEGACY_EDWIN_EMAIL = 'edwingomezarissto@gmail.com';
+const LEGACY_EDWIN_NAME = 'edwin gomez';
 const TARGET_EDWIN_USERNAME = 'EGOMEZ';
 
 export function createService({ getUser, admin, getStore }) {
@@ -33,7 +34,6 @@ export function createService({ getUser, admin, getStore }) {
 
     const allUsers = await rawUsers();
     const legacy = allUsers.find(item => (item.email || '').toLowerCase() === LEGACY_EDWIN_EMAIL);
-    if (!legacy || legacy.id === user.id) return;
 
     for (let attempt = 0; attempt < 5; attempt++) {
       const current = await store.getWithMetadata('records', { type: 'json' });
@@ -43,8 +43,11 @@ export function createService({ getUser, admin, getStore }) {
 
       for (const collection of ['cases', 'tasks']) {
         for (const row of next[collection] || []) {
-          if (row.ownerId === legacy.id) {
+          const legacyOwnerId = legacy && row.ownerId === legacy.id;
+          const legacyOwnerName = String(row.owner || '').trim().toLowerCase() === LEGACY_EDWIN_NAME;
+          if (row.ownerId !== user.id && (legacyOwnerId || legacyOwnerName)) {
             row.ownerId = user.id;
+            row.owner = 'Edwin Gomez';
             row.updatedAt = new Date().toISOString();
             changed = true;
           }
