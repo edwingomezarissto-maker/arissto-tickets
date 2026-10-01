@@ -6,6 +6,8 @@ const cleanUsername = value => typeof value === 'string' ? value.trim() : '';
 const usernameEmail = username => username.toLowerCase() + '@arissto.invalid';
 const validPassword = value => typeof value === 'string' && value.length >= 3 && value.length <= 128;
 const permitted = user => user && (isAdmin(user) || user.roles?.includes('member'));
+const LEGACY_EDWIN_EMAIL = 'edwingomezarissto@gmail.com';
+const TARGET_EDWIN_USERNAME = 'EGOMEZ';
 
 export function createService({ getUser, admin, getStore }) {
   async function users() {
@@ -15,6 +17,45 @@ export function createService({ getUser, admin, getStore }) {
       result.push(...batch.filter(permitted).map(publicUser));
       if (batch.length < 100) return result;
     }
+  }
+
+  async function rawUsers() {
+    const result = [];
+    for (let page = 1; ; page++) {
+      const batch = await admin.listUsers({ page, perPage: 100 });
+      result.push(...batch);
+      if (batch.length < 100) return result;
+    }
+  }
+
+  async function migrateLegacyEdwinOwnership(store, user) {
+    if ((user.appMetadata?.username || '').toUpperCase() !== TARGET_EDWIN_USERNAME) return;
+
+    const allUsers = await rawUsers();
+    const legacy = allUsers.find(item => (item.email || '').toLowerCase() === LEGACY_EDWIN_EMAIL);
+    if (!legacy || legacy.id === user.id) return;
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const current = await store.getWithMetadata('records', { type: 'json' });
+      const data = current?.data || emptyData();
+      let changed = false;
+      const next = structuredClone(data);
+
+      for (const collection of ['cases', 'tasks']) {
+        for (const row of next[collection] || []) {
+          if (row.ownerId === legacy.id) {
+            row.ownerId = user.id;
+            row.updatedAt = new Date().toISOString();
+            changed = true;
+          }
+        }
+      }
+
+      if (!changed) return;
+      const result = await store.setJSON('records', next, current ? { onlyIfMatch: current.etag } : { onlyIfNew: true });
+      if (result.modified) return;
+    }
+    throw new DataError('No se pudo completar la migracion de los registros de Edwin Gomez.', 409);
   }
 
   async function updateAccount(existing, { name, username, password }) {
@@ -84,6 +125,8 @@ export function createService({ getUser, admin, getStore }) {
       }
 
       const store = getStore({ name: 'arissto-support-v1', consistency: 'strong' });
+      await migrateLegacyEdwinOwnership(store, user);
+
       if (request.method === 'GET') {
         const data = await store.get('records', { type: 'json' }) || emptyData();
         return reply({ ...visibleData(data, user), user: publicUser(user), users: isAdmin(user) ? await users() : [publicUser(user)] });
