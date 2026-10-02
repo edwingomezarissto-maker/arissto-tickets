@@ -137,10 +137,14 @@ export function createService({ getUser, admin, getStore }) {
 
         if (body.action === 'delete') {
           if (typeof body.id !== 'string' || !body.id) throw new DataError('Cuenta invalida.');
-          if (body.id === user.id) throw new DataError('No puede eliminar su propia cuenta de administrador.', 403);
+          if (body.id === user.id) throw new DataError('No puede eliminar la cuenta con la que tiene la sesion iniciada.', 403);
           const existing = await admin.getUser(body.id);
           if (!permitted(existing)) throw new DataError('La cuenta no pertenece al equipo.', 403);
-          if (isAdmin(existing)) throw new DataError('No se puede eliminar una cuenta de administrador desde este apartado.', 403);
+          if (isAdmin(existing)) {
+            const allUsers = await rawUsers();
+            const adminCount = allUsers.filter(item => permitted(item) && isAdmin(item)).length;
+            if (adminCount <= 1) throw new DataError('Debe conservar al menos una cuenta de administrador.', 403);
+          }
           const store = getStore({ name: 'arissto-support-v1', consistency: 'strong' });
           const transferred = await transferUserRecords(store, existing.id, user);
           await admin.deleteUser(existing.id);
