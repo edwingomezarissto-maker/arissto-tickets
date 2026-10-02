@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, copyFile } from 'node:fs/promises';
 
 await mkdir('dist/assets', { recursive: true });
 await mkdir('assets', { recursive: true });
-await build({ entryPoints: ['src/account.js'], bundle: true, platform: 'browser',
+await build({ entryPoints: ['src/client.js'], bundle: true, platform: 'browser',
   format: 'iife', target: 'es2022', outfile: 'assets/account.js' });
 const html = (await readFile('index.html', 'utf8')).replace('    <script src="seed-data.js"></script>\n', '').replace('    <script src="seed-data.js"></script>\r\n', '');
 // Historical records and phone numbers are local migration sources, never public assets.
