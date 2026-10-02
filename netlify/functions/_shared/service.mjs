@@ -61,6 +61,32 @@ export function createService({ getUser, admin, getStore }) {
     throw new DataError('No se pudo completar la migracion de los registros de Edwin Gomez.', 409);
   }
 
+  async function transferUserRecords(store, fromUserId, toUser) {
+    const ownerName = publicUser(toUser).name;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const current = await store.getWithMetadata('records', { type: 'json' });
+      const data = current?.data || emptyData();
+      const next = structuredClone(data);
+      let transferred = 0;
+
+      for (const collection of ['cases', 'tasks']) {
+        for (const row of next[collection] || []) {
+          if (!row.deleted && row.ownerId === fromUserId) {
+            row.ownerId = toUser.id;
+            row.owner = ownerName;
+            row.updatedAt = new Date().toISOString();
+            transferred += 1;
+          }
+        }
+      }
+
+      if (!transferred) return 0;
+      const result = await store.setJSON('records', next, current ? { onlyIfMatch: current.etag } : { onlyIfNew: true });
+      if (result.modified) return transferred;
+    }
+    throw new DataError('No se pudieron transferir los registros del usuario. Intente nuevamente.', 409);
+  }
+
   async function updateAccount(existing, { name, username, password }) {
     const nextUsername = cleanUsername(username);
     if (!/^[A-Za-z0-9._-]{3,40}$/.test(nextUsername)) throw new DataError('Ingrese un usuario valido de 3 a 40 caracteres.');
@@ -108,6 +134,19 @@ export function createService({ getUser, admin, getStore }) {
       if (path === '/api/users') {
         if (!isAdmin(user)) return reply({ error: 'Solo el administrador puede gestionar usuarios.' }, 403);
         if (request.method === 'GET') return reply({ users: await users() });
+
+        if (body.action === 'delete') {
+          if (typeof body.id !== 'string' || !body.id) throw new DataError('Cuenta invalida.');
+          if (body.id === user.id) throw new DataError('No puede eliminar su propia cuenta de administrador.', 403);
+          const existing = await admin.getUser(body.id);
+          if (!permitted(existing)) throw new DataError('La cuenta no pertenece al equipo.', 403);
+          if (isAdmin(existing)) throw new DataError('No se puede eliminar una cuenta de administrador desde este apartado.', 403);
+          const store = getStore({ name: 'arissto-support-v1', consistency: 'strong' });
+          const transferred = await transferUserRecords(store, existing.id, user);
+          await admin.deleteUser(existing.id);
+          return reply({ ok: true, transferred, users: await users() });
+        }
+
         if (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 150 ||
             typeof body.username !== 'string' || !/^[A-Za-z0-9._-]{3,40}$/.test(body.username) ||
             typeof body.password !== 'string' || body.password.length > 128 ||
