@@ -14,7 +14,7 @@ export function visibleData(data, user) {
 const fields = {
   cases: ['title', 'cooperative', 'requester', 'requesterPhone', 'requesterPosition', 'owner',
     'status', 'priority', 'requestDate', 'commitmentDate', 'clientRequest', 'currentProcess', 'observations'],
-  tasks: ['title', 'owner', 'progress', 'details'],
+  tasks: ['title', 'owner', 'status', 'progress', 'details'],
   cooperatives: ['name'],
 };
 function cleanRow(kind, raw) {
@@ -40,6 +40,10 @@ function cleanRow(kind, raw) {
       for (const key of ['requestDate', 'commitmentDate']) {
         if (result[key] && (!/^\d{4}-\d{2}-\d{2}$/.test(result[key]) || !Number.isFinite(Date.parse(result[key])))) throw new DataError('Fecha invalida.');
       }
+    }
+    if (kind === 'tasks') {
+      if (!result.status) result.status = 'Pendiente';
+      if (!['Pendiente', 'En proceso', 'En espera', 'Finalizada', 'Cancelada'].includes(result.status)) throw new DataError('Estado de tarea invalido.');
     }
   }
   return result;
