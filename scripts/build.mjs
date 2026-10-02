@@ -5,7 +5,10 @@ await mkdir('dist/assets', { recursive: true });
 await mkdir('assets', { recursive: true });
 await build({ entryPoints: ['src/client.js'], bundle: true, platform: 'browser',
   format: 'iife', target: 'es2022', outfile: 'assets/account.js' });
-const html = (await readFile('index.html', 'utf8')).replace('    <script src="seed-data.js"></script>\n', '').replace('    <script src="seed-data.js"></script>\r\n', '');
+let html = (await readFile('index.html', 'utf8')).replace('    <script src="seed-data.js"></script>\n', '').replace('    <script src="seed-data.js"></script>\r\n', '');
+if (!html.includes('assets/cooperative-migration.js')) {
+  html = html.replace('    <script src="assets/account.js"></script>', '    <script src="assets/account.js"></script>\n    <script src="assets/cooperative-migration.js"></script>');
+}
 // Historical records and phone numbers are local migration sources, never public assets.
 const source = await readFile('app.js', 'utf8');
 const start = source.indexOf('const DEFAULT_COOPERATIVES = [');
@@ -17,3 +20,4 @@ await writeFile('dist/app.js', app);
 await copyFile('styles.css', 'dist/styles.css');
 await copyFile('assets/logo-sst.jpeg', 'dist/assets/logo-sst.jpeg');
 await copyFile('assets/account.js', 'dist/assets/account.js');
+await copyFile('assets/cooperative-migration.js', 'dist/assets/cooperative-migration.js');
