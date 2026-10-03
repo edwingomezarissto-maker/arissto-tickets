@@ -7,6 +7,7 @@ const INITIAL_ADMIN = {
 
 export async function ensureInitialAdmin({ password, admin, getStore }) {
   if (!password) return;
+
   const store = getStore({ name: 'arissto-support-v1', consistency: 'strong' });
   let existing;
   for (let page = 1; ; page++) {
@@ -17,16 +18,24 @@ export async function ensureInitialAdmin({ password, admin, getStore }) {
 
   let user = existing;
   if (!user) {
-    user = await admin.createUser({ email: INITIAL_ADMIN.email, password,
-      data: { user_metadata: { full_name: INITIAL_ADMIN.fullName },
-        app_metadata: { roles: ['admin'], username: INITIAL_ADMIN.username } } });
+    user = await admin.createUser({
+      email: INITIAL_ADMIN.email,
+      password,
+      data: {
+        user_metadata: { full_name: INITIAL_ADMIN.fullName },
+        app_metadata: { roles: ['admin'], username: INITIAL_ADMIN.username },
+      },
+    });
   } else {
-    const roles = new Set(user.roles || []);
-    roles.add('admin');
+    const hadAdminRole = user.roles?.includes('admin') === true;
     const currentName = user.userMetadata?.full_name || user.name || '';
-    const needsRepair = user.appMetadata?.username !== INITIAL_ADMIN.username ||
-      !roles.has('admin') || currentName !== INITIAL_ADMIN.fullName;
+    const needsRepair = !hadAdminRole ||
+      user.appMetadata?.username !== INITIAL_ADMIN.username ||
+      currentName !== INITIAL_ADMIN.fullName;
+
     if (needsRepair) {
+      const roles = new Set(user.roles || []);
+      roles.add('admin');
       user = await admin.updateUser(user.id, {
         user_metadata: { ...user.userMetadata, full_name: INITIAL_ADMIN.fullName },
         app_metadata: { ...user.appMetadata, roles: [...roles], username: INITIAL_ADMIN.username },
