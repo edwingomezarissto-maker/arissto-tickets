@@ -7,6 +7,7 @@ const local = location.protocol === 'file:';
 let user = null;
 let users = [];
 let snapshot = emptySnapshot();
+let snapshotSignature = '';
 let saving = false;
 let refreshing = false;
 let epoch = 0;
@@ -35,6 +36,7 @@ function lock(text) {
   user = null;
   users = [];
   snapshot = emptySnapshot();
+  snapshotSignature = '';
   passwordMode = null;
   invitationToken = null;
   resetUserForm();
@@ -61,9 +63,17 @@ async function api(path, body) {
   return data;
 }
 
-function receive(data) {
+function dataSignature(data) {
+  return JSON.stringify(['cases', 'tasks', 'cooperatives'].map(key => data[key] || []));
+}
+
+function receive(data, force = false) {
+  const nextSignature = dataSignature(data);
+  if (!force && nextSignature === snapshotSignature) return false;
   snapshot = Object.fromEntries(['cases', 'tasks', 'cooperatives'].map(key => [key, structuredClone(data[key] || [])]));
+  snapshotSignature = nextSignature;
   window.ARISSTO_APP.receive(snapshot);
+  return true;
 }
 
 function drawUsers() {
@@ -116,7 +126,7 @@ async function enter() {
   if (currentEpoch !== epoch) return;
   const latest = await api('/api/support');
   if (currentEpoch !== epoch) return;
-  receive(latest);
+  receive(latest, true);
   connected = true;
   $('usersTab').hidden = !administrator();
   document.querySelector('[data-tab-target="cooperativesSection"]').hidden = !administrator();
@@ -142,22 +152,17 @@ async function refresh() {
     }
     user = data.user;
     users = data.users;
-    receive(data);
+    const changed = receive(data);
     $('usersTab').hidden = !administrator();
     $('sessionLabel').textContent = (administrator() ? 'Administrador: ' : 'Mi espacio: ') + user.name;
     document.querySelector('[data-tab-target="cooperativesSection"]').hidden = !administrator();
     if (!administrator() && document.querySelector('#usersSection.active, #cooperativesSection.active')) {
       document.querySelector('[data-tab-target="dashboardSection"]').click();
     }
-    drawUsers();
-    status('Sincronizado a las ' + new Date().toLocaleTimeString('es-SV') + '.');
+    if (changed) drawUsers();
+    status((changed ? 'Datos actualizados' : 'Sin cambios') + ' a las ' + new Date().toLocaleTimeString('es-SV') + '.');
   } catch (error) { status(error.message || 'Sin conexion. Intente actualizar nuevamente.'); }
   finally { refreshing = false; }
-}
-
-function inertForms(value) {
-  $('appShell').inert = value;
-  document.querySelectorAll('.modal-backdrop').forEach(modal => { modal.inert = value; });
 }
 
 async function commit(candidate) {
@@ -166,12 +171,11 @@ async function commit(candidate) {
   const operations = makeOperations(snapshot, candidate);
   if (!operations.length) return true;
   saving = true;
-  inertForms(true);
   status('Guardando...');
   try {
     const data = await api('/api/support', { operations });
     if (epoch !== currentEpoch) return false;
-    receive(data);
+    receive(data, true);
     status('Cambios guardados y sincronizados.');
     return true;
   } catch (error) {
@@ -185,14 +189,14 @@ async function commit(candidate) {
       if (error.status === 409) {
         const latest = await api('/api/support').catch(() => null);
         if (latest && epoch === currentEpoch) {
-          receive(latest);
+          receive(latest, true);
           window.ARISSTO_APP.clearModals?.();
           status('El registro cambio en otro equipo. Se cargo la version actual; vuelva a abrirlo para editar.');
         }
       }
     }
     return false;
-  } finally { saving = false; inertForms(false); }
+  } finally { saving = false; }
 }
 
 function prepareAssignment(kind, row) {
@@ -311,9 +315,8 @@ for (const kind of ['case', 'task']) {
     if (selected) $(kind === 'case' ? 'owner' : 'taskOwner').value = selected.name;
   });
 }
-window.addEventListener('focus', refresh);
 window.addEventListener('online', refresh);
-setInterval(() => { if (!document.hidden) refresh(); }, 20000);
+setInterval(() => { if (!document.hidden) refresh(); }, 60000);
 
 window.ARISSTO_CLOUD = { start, commit, prepareAssignment,
   assignedAccount: kind => local || !user ? '' : administrator() ? $(kind + 'Account').value : user.id };
