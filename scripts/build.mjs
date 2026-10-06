@@ -7,12 +7,7 @@ await build({ entryPoints: ['src/client.js'], bundle: true, platform: 'browser',
   format: 'iife', target: 'es2022', outfile: 'assets/account.js' });
 let html = (await readFile('index.html', 'utf8'))
   .replace('    <script src="seed-data.js"></script>\n', '')
-  .replace('    <script src="seed-data.js"></script>\r\n', '')
-  // Chart.js is temporarily disabled in production because rendering the hidden
-  // graphical dashboard can block the browser UI. The rest of the application
-  // remains fully functional and app.js already handles the absence of Chart.
-  .replace('    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>\n', '')
-  .replace('    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>\r\n', '');
+  .replace('    <script src="seed-data.js"></script>\r\n', '');
 if (!html.includes('assets/cooperative-migration.js')) {
   html = html.replace('    <script src="assets/account.js"></script>', '    <script src="assets/account.js"></script>\n    <script src="assets/cooperative-migration.js"></script>');
 }

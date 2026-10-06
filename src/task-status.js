@@ -219,8 +219,8 @@ function installTaskStatusBehavior() {
   }
   const taskBody = byId('tasksTableBody');
   if (taskBody) new MutationObserver(decorateTaskTable).observe(taskBody, { childList: true });
-  const dashboard = byId('extendedDashboard');
-  if (dashboard) new MutationObserver(updateDashboard).observe(dashboard, { childList: true, subtree: true });
+  // Completed renders must not observe their own DOM writes.
+  document.addEventListener('arissto:dashboard-rendered', updateDashboard);
   byId('dashboardMonthFilter')?.addEventListener('change', updateDashboard);
   document.querySelector('[data-tab-target="tasksSection"]')?.addEventListener('click', () => setTimeout(() => { decorateTaskTable(); refreshTaskStatusData(); }, 50));
   document.querySelector('[data-tab-target="graphicDashboardSection"]')?.addEventListener('click', () => setTimeout(refreshTaskStatusData, 80));

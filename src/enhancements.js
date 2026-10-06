@@ -130,6 +130,7 @@ function ensureDashboardShell() {
       shell.querySelectorAll('[data-dashboard-mode]').forEach(item => item.classList.toggle('active', item === button));
       shell.querySelectorAll('[data-dashboard-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.dashboardPanel === button.dataset.dashboardMode));
       renderExtendedDashboardCharts();
+      document.dispatchEvent(new Event("arissto:dashboard-rendered"));
     });
   });
   return shell;
@@ -193,6 +194,7 @@ function renderExtendedDashboard() {
   const emptyState = document.getElementById('chartEmptyState');
   if (emptyState && (tasks.length || cases.length)) emptyState.classList.remove('visible');
   renderExtendedDashboardCharts();
+  document.dispatchEvent(new Event("arissto:dashboard-rendered"));
 }
 
 function renderExtendedDashboardCharts() {
