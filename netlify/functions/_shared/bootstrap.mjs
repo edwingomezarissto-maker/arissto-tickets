@@ -9,6 +9,8 @@ export async function ensureInitialAdmin({ password, admin, getStore }) {
   if (!password) return;
 
   const store = getStore({ name: 'arissto-support-v1', consistency: 'strong' });
+  // Do not recreate an account that an administrator subsequently deleted.
+  if ((await store.get('initial-admin', { type: 'json' }))?.id) return;
   let existing;
   for (let page = 1; ; page++) {
     const batch = await admin.listUsers({ page, perPage: 100 });

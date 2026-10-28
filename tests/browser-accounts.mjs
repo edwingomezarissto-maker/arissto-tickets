@@ -6,8 +6,11 @@ import assert from 'node:assert/strict';
 import { createService } from '../netlify/functions/_shared/service.mjs';
 
 // These accounts and records exist only in this isolated browser test.
-const accounts = [{ id: 'root', email: 'edwingomez@arissto.invalid', name: 'Edwin Gomez',
-  password: 'qa-password-123456', roles: ['admin'], appMetadata: { username: 'EdwinGomez' } }];
+const accounts = [{ id: 'root', email: 'egomez@arissto.invalid', name: 'Edwin Gomez',
+  password: 'qa-password-123456', roles: ['admin'], appMetadata: { username: 'EGOMEZ', arisstoPrimaryAdmin: true } },
+  { id: 'principal-admin', email: 'admin@arissto.invalid', name: 'Administrador', password: 'qa-password-123456',
+    roles: ['admin'], appMetadata: { username: 'ADMIN', arisstoPrimaryAdmin: true } }];
+let nextAccountId = 1;
 let data = null;
 let etag = 0;
 let failNextWrite = false;
@@ -21,9 +24,13 @@ const store = {
 };
 const admin = {
   listUsers: async () => accounts,
-  getUser: async id => accounts.find(user => user.id === id),
+  getUser: async id => {
+    const account = accounts.find(user => user.id === id);
+    if (!account) throw Object.assign(new Error('not found'), { status: 404 });
+    return account;
+  },
   createUser: async input => {
-    const account = { id: 'u' + accounts.length, email: input.email, password: input.password,
+    const account = { id: 'u' + nextAccountId++, email: input.email, password: input.password,
       name: input.data.user_metadata.full_name, roles: input.data.app_metadata.roles,
       appMetadata: input.data.app_metadata, userMetadata: input.data.user_metadata };
     accounts.push(account); return account;
@@ -31,9 +38,14 @@ const admin = {
   updateUser: async (id, updates) => {
     const account = accounts.find(user => user.id === id);
     account.name = updates.user_metadata.full_name;
+    account.userMetadata = updates.user_metadata;
+    account.appMetadata = updates.app_metadata;
+    account.roles = updates.app_metadata.roles;
+    account.email = updates.email;
     if (updates.password) account.password = updates.password;
     return account;
   },
+  deleteUser: async id => { accounts.splice(accounts.findIndex(account => account.id === id), 1); },
 };
 const root = resolve('dist');
 const server = createServer(async (req, res) => {
@@ -114,7 +126,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: 'qa-output/login-mobile.png', fullPage: true });
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await login(page, 'EdwinGomez');
+  await login(page, 'EGOMEZ');
   await page.locator('#usersTab').click();
   for (const name of ['UsuarioA', 'UsuarioB']) {
     await page.locator('#userName').fill(name);
@@ -219,6 +231,81 @@ try {
     await page.locator(`[data-tab-target="${section}"]`).click();
     assert.equal(await page.locator('#' + section).isVisible(), true);
   }
+  // Existing Identity accounts must remain visible even if their old role is missing.
+  accounts.push({ id: 'mardo', email: 'mcordero@arissto.invalid', name: 'Mardoqueo Cordero',
+    password: 'qa-password-123456', roles: [], appMetadata: { username: 'MCORDERO' } });
+  await page.locator('#usersTab').click();
+  const mardoRow = page.locator('#usersBody tr').filter({ hasText: 'MCORDERO' });
+  await mardoRow.waitFor();
+  assert.match(await mardoRow.textContent(), /Sin acceso/);
+  await page.locator('#userName').fill('Mardoqueo Cordero');
+  await page.locator('#userUsername').fill('MCORDERO');
+  await page.locator('#userPassword').fill('qa-password-123456');
+  await page.locator('#saveUserButton').click();
+  await page.locator('#usersMessage').filter({ hasText: 'ya existe. Use Editar' }).waitFor();
+  assert.equal(await mardoRow.count(), 1);
+  await mardoRow.getByRole('button', { name: 'Editar', exact: true }).click();
+  await page.locator('#userRole').selectOption('member');
+  await page.locator('#saveUserButton').click();
+  await page.locator('#usersMessage').getByText('Cuenta actualizada.', { exact: true }).waitFor();
+  assert.match(await mardoRow.textContent(), /Usuario comun/);
+  const rootRow = page.locator('#usersBody tr').filter({ hasText: 'EGOMEZ' });
+  await rootRow.getByRole('button', { name: 'Editar', exact: true }).click();
+  assert.equal(await page.locator('#userRole').isDisabled(), true);
+  assert.equal(await rootRow.getByRole('button', { name: 'Eliminar', exact: true }).count(), 0);
+  await page.locator('#cancelUserEdit').click();
+
+  // All three account types can change their own password and use it in a fresh login.
+  for (const username of ['MCORDERO', 'EGOMEZ', 'ADMIN']) {
+    const ownContext = await context(); const ownPage = await ownContext.newPage();
+    await ownPage.goto(url); await login(ownPage, username);
+    assert.equal(await ownPage.locator('#usersTab').isVisible(), username !== 'MCORDERO');
+    await ownPage.locator('#changePassword').click();
+    await ownPage.locator('#cancelPasswordChange').click();
+    assert.equal(await ownPage.locator('#appShell').isVisible(), true);
+    await ownPage.locator('#changePassword').click();
+    await ownPage.locator('#newPassword').fill('new-password-' + username);
+    await ownPage.locator('#confirmPassword').fill('new-password-' + username);
+    await ownPage.locator('#passwordForm button[type="submit"]').click();
+    await ownPage.locator('#accessMessage').filter({ hasText: 'Credenciales actualizadas.' }).waitFor();
+    await login(ownPage, username, 'new-password-' + username);
+    assert.equal(await ownPage.locator('#usersTab').isVisible(), username !== 'MCORDERO');
+    await ownContext.close();
+  }
+  const mardoContext = await context(); const mardoPage = await mardoContext.newPage();
+  await mardoPage.goto(url); await login(mardoPage, 'MCORDERO', 'new-password-MCORDERO');
+  assert.equal(await mardoPage.evaluate(() => fetch('/api/users').then(response => response.status)), 403);
+  await mardoRow.getByRole('button', { name: 'Editar', exact: true }).click();
+  await page.locator('#userRole').selectOption('admin');
+  await page.locator('#saveUserButton').click();
+  await page.locator('#usersMessage').getByText('Cuenta actualizada.', { exact: true }).waitFor();
+  await mardoPage.locator('#refreshCloud').click();
+  await mardoPage.locator('#usersTab').waitFor({ state: 'visible' });
+  await mardoPage.locator('#usersTab').click();
+  await mardoRow.getByRole('button', { name: 'Editar', exact: true }).click();
+  await page.locator('#userRole').selectOption('member');
+  await page.locator('#saveUserButton').click();
+  await page.locator('#usersMessage').getByText('Cuenta actualizada.', { exact: true }).waitFor();
+  await mardoPage.locator('#refreshCloud').click();
+  await mardoPage.locator('#usersTab').waitFor({ state: 'hidden' });
+  assert.equal(await mardoPage.locator('#usersBody tr').count(), 0);
+  await mardoRow.getByRole('button', { name: 'Eliminar', exact: true }).click();
+  await page.locator('#usersMessage').filter({ hasText: 'Cuenta eliminada del servidor.' }).waitFor();
+  assert.equal(await mardoRow.count(), 0);
+  assert.equal(accounts.some(account => account.id === 'mardo'), false);
+  await mardoPage.locator('#refreshCloud').click();
+  await mardoPage.locator('#loginForm').waitFor({ state: 'visible' });
+  await mardoContext.close();
+  await page.locator('[data-tab-target="tasksSection"]').click();
+  await page.locator('[data-action="delete-task"][data-id="json-task"]').click();
+  await page.locator('[data-action="delete-task"][data-id="json-task"]').waitFor({ state: 'detached' });
+  assert.equal(data.tasks.some(task => task.id === 'json-task'), false);
+  assert.ok(!JSON.stringify(data).includes('Tarea importada JSON'));
+  await page.locator('[data-tab-target="casesSection"]').click();
+  await page.locator('[data-action="delete"][data-id="json-case"]').click();
+  await page.locator('[data-action="delete"][data-id="json-case"]').waitFor({ state: 'detached' });
+  assert.equal(data.cases.some(row => row.id === 'json-case'), false);
+  assert.ok(!JSON.stringify(data).includes('Caso importado JSON'));
   assert.deepEqual(errors, []);
-  console.log('PASS: cuentas, guardado, JSON invalido, importacion, reintento, duplicados, exportacion y navegacion.');
+  console.log('PASS: cuentas principales, roles, usuarios ocultos, claves propias, eliminacion en servidor, JSON y navegacion.');
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

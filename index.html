@@ -26,13 +26,14 @@
           <label>Usuario<input type="text" id="loginEmail" autocomplete="username" pattern="[A-Za-z0-9._-]{3,40}" required /></label>
           <label>Contrasena<input type="password" id="loginPassword" autocomplete="current-password" required /></label>
           <button class="primary-button" type="submit">Ingresar</button>
-          <p>Si olvido su contrasena, solicite a Edwin Gomez que la restablezca.</p>
+          <p>Si olvido su contrasena, solicite a un administrador que la restablezca.</p>
         </form>
         <form id="passwordForm" hidden>
           <label>Usuario actual<input type="text" id="profileUsername" autocomplete="username" pattern="[A-Za-z0-9._-]{3,40}" required /></label>
           <label>Nueva contrasena<input type="password" id="newPassword" autocomplete="new-password" minlength="3" maxlength="128" required /></label>
           <label>Confirmar contrasena<input type="password" id="confirmPassword" autocomplete="new-password" minlength="3" maxlength="128" required /></label>
           <button class="primary-button" type="submit">Guardar cambios</button>
+          <button class="secondary-button" id="cancelPasswordChange" type="button">Cancelar</button>
         </form>
         <noscript>Active JavaScript para ingresar a la aplicacion.</noscript>
       </div>
@@ -76,13 +77,15 @@
 
       <main>
         <section class="section-block tab-panel" id="usersSection" aria-labelledby="usersTitle">
-          <div class="section-heading"><h2 id="usersTitle">Usuarios</h2></div>
+          <div class="section-heading"><h2 id="usersTitle">Usuarios</h2><button class="secondary-button" id="refreshUsers" type="button">Actualizar usuarios</button></div>
+          <p>Estas cuentas se guardan en el servidor. Los usuarios comunes ven sus casos y tareas; los administradores gestionan todas las cuentas. EGOMEZ y ADMIN son administradores principales.</p>
           <p id="usersMessage" role="status"></p>
           <form id="userForm" class="user-form">
             <input type="hidden" id="editUserId" />
             <label>Nombre<input type="text" id="userName" maxlength="150" autocomplete="off" required /></label>
             <label>Usuario<input type="text" id="userUsername" pattern="[A-Za-z0-9._-]{3,40}" autocomplete="off" required /></label>
             <label><span id="userPasswordLabel">Contrasena inicial (minimo 3 caracteres)</span><input type="password" id="userPassword" autocomplete="new-password" minlength="3" maxlength="128" required /></label>
+            <label>Acceso<select id="userRole"><option value="member">Usuario comun</option><option value="admin">Administrador</option></select></label>
             <div class="section-actions">
               <button class="primary-button" id="saveUserButton" type="submit">Crear usuario</button>
               <button class="secondary-button" id="cancelUserEdit" type="button" hidden>Cancelar</button>

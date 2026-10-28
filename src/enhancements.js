@@ -1,6 +1,5 @@
 const enhancementCharts = {};
 let enhancementData = { cases: [], tasks: [] };
-let enhancementUser = null;
 
 function destroyEnhancementCharts() {
   Object.values(enhancementCharts).forEach(chart => chart?.destroy?.());
@@ -235,70 +234,15 @@ async function loadEnhancementData() {
     if (!response.ok) return;
     const data = await response.json();
     enhancementData = { cases: Array.isArray(data.cases) ? data.cases : [], tasks: Array.isArray(data.tasks) ? data.tasks : [] };
-    enhancementUser = data.user || null;
     renderExtendedDashboard();
-    decorateUserRows();
   } catch {}
-}
-
-async function deleteUser(account) {
-  if (!account?.id) return;
-  if (!confirm(`¿Eliminar al usuario ${account.name} (${account.username})?\n\nSus casos y tareas serán transferidos al administrador actual.`)) return;
-  try {
-    const response = await fetch('/api/users', {
-      method: 'POST', credentials: 'same-origin', cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete', id: account.id }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || 'No se pudo eliminar el usuario.');
-    const msg = document.getElementById('usersMessage');
-    if (msg) msg.textContent = `Usuario eliminado. Registros transferidos: ${data.transferred || 0}.`;
-    setTimeout(() => location.reload(), 600);
-  } catch (error) {
-    const msg = document.getElementById('usersMessage');
-    if (msg) msg.textContent = error.message;
-  }
-}
-
-async function decorateUserRows() {
-  const body = document.getElementById('usersBody');
-  if (!body || location.protocol === 'file:') return;
-  let accounts = [];
-  try {
-    const response = await fetch('/api/users', { credentials: 'same-origin', cache: 'no-store' });
-    if (!response.ok) return;
-    accounts = (await response.json()).users || [];
-  } catch { return; }
-  for (const row of body.querySelectorAll('tr')) {
-    const cells = row.querySelectorAll('td');
-    if (cells.length < 4 || row.querySelector('.delete-user-button')) continue;
-    const username = cells[1]?.textContent?.trim();
-    const account = accounts.find(item => item.username === username);
-    if (!account || account.roles?.includes('admin') || account.id === enhancementUser?.id) continue;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'danger-button delete-user-button';
-    button.textContent = 'Eliminar';
-    button.addEventListener('click', () => deleteUser(account));
-    cells[3].append(button);
-  }
-}
-
-function observeUsersTable() {
-  const body = document.getElementById('usersBody');
-  if (!body) return;
-  const observer = new MutationObserver(() => decorateUserRows());
-  observer.observe(body, { childList: true });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   injectEnhancementStyles();
   ensureDashboardShell();
-  observeUsersTable();
   document.getElementById('dashboardMonthFilter')?.addEventListener('change', renderExtendedDashboard);
   document.querySelector('[data-tab-target="graphicDashboardSection"]')?.addEventListener('click', loadEnhancementData);
-  document.querySelector('[data-tab-target="usersSection"]')?.addEventListener('click', decorateUserRows);
   loadEnhancementData();
 });
 

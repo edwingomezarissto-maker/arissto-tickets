@@ -6,6 +6,7 @@ const $ = id => document.getElementById(id);
 const local = location.protocol === 'file:';
 let user = null;
 let users = [];
+let usersSignature = '';
 let snapshot = emptySnapshot();
 let snapshotSignature = '';
 let saving = false;
@@ -35,6 +36,7 @@ function lock(text) {
   connected = false;
   user = null;
   users = [];
+  usersSignature = '';
   snapshot = emptySnapshot();
   snapshotSignature = '';
   passwordMode = null;
@@ -57,7 +59,7 @@ async function api(path, body) {
   if (!response.ok) {
     const error = new Error(data.error || 'No se pudo guardar.');
     error.status = response.status;
-    if ([401, 403].includes(response.status)) lock(error.message);
+    if (response.status === 401) lock(error.message);
     throw error;
   }
   return data;
@@ -78,9 +80,13 @@ function receive(data, force = false) {
 
 function drawUsers() {
   $('usersBody').replaceChildren();
+  usersSignature = JSON.stringify(users);
+  if (!administrator()) return;
   for (const account of users) {
     const tr = document.createElement('tr');
-    for (const value of [account.name, account.username, account.roles.includes('admin') ? 'Administrador' : 'Usuario']) {
+    tr.dataset.userId = account.id;
+    const access = account.roles.includes('admin') ? 'Administrador' : account.roles.includes('member') ? 'Usuario comun' : 'Sin acceso';
+    for (const value of [account.name, account.username, access]) {
       const td = document.createElement('td'); td.textContent = value; tr.append(td);
     }
     const actions = document.createElement('td');
@@ -88,15 +94,56 @@ function drawUsers() {
     edit.type = 'button'; edit.className = 'secondary-button'; edit.textContent = 'Editar';
     edit.addEventListener('click', () => {
       $('editUserId').value = account.id; $('userName').value = account.name;
-      $('userUsername').value = account.username; $('userUsername').readOnly = false;
+      $('userUsername').value = account.username; $('userUsername').readOnly = account.primaryAdmin === true;
+      $('userRole').value = account.roles.includes('admin') ? 'admin' : 'member';
+      $('userRole').disabled = account.primaryAdmin === true;
       $('userPassword').value = ''; $('userPassword').required = false;
       $('userPasswordLabel').textContent = 'Nueva contrasena (opcional, minimo 3 caracteres)';
       $('saveUserButton').textContent = 'Guardar cambios'; $('cancelUserEdit').hidden = false;
       $('userName').focus();
     });
-    actions.append(edit); tr.append(actions);
+    actions.append(edit);
+    if (account.id !== user.id) {
+      const remove = document.createElement('button');
+      remove.type = 'button'; remove.className = 'danger-button delete-user-button'; remove.textContent = 'Eliminar';
+      remove.addEventListener('click', () => deleteAccount(account, remove));
+      actions.append(remove);
+    }
+    tr.append(actions);
     $('usersBody').append(tr);
   }
+}
+
+function updateAccess() {
+  $('usersTab').hidden = !administrator();
+  document.querySelector('[data-tab-target="cooperativesSection"]').hidden = !administrator();
+  $('sessionLabel').textContent = (administrator() ? 'Administrador: ' : 'Mi espacio: ') + user.name;
+  if (!administrator() && document.querySelector('#usersSection.active, #cooperativesSection.active')) {
+    document.querySelector('[data-tab-target="dashboardSection"]').click();
+  }
+}
+
+async function reloadAccounts() {
+  const currentEpoch = epoch;
+  const data = await api('/api/support');
+  if (epoch !== currentEpoch || !connected) return;
+  user = data.user; users = data.users;
+  updateAccess(); drawUsers(); receive(data);
+}
+
+async function deleteAccount(account, button) {
+  if (!confirm(`¿Eliminar la cuenta ${account.name} (${account.username}) del servidor?\n\nLa persona perdera el acceso. Sus casos y tareas se conservaran y se transferiran a su cuenta administradora.`)) return;
+  button.disabled = true;
+  const currentEpoch = epoch;
+  try {
+    const result = await api('/api/users', { action: 'delete', id: account.id });
+    if (epoch !== currentEpoch) return;
+    if ($('editUserId').value === account.id) resetUserForm();
+    users = result.users; drawUsers();
+    $('usersMessage').textContent = `Cuenta eliminada del servidor. Registros transferidos: ${result.transferred || 0}.`;
+    await reloadAccounts();
+  } catch (error) { $('usersMessage').textContent = error.message; }
+  finally { button.disabled = false; }
 }
 
 async function migrateLegacy() {
@@ -128,9 +175,7 @@ async function enter() {
   if (currentEpoch !== epoch) return;
   receive(latest, true);
   connected = true;
-  $('usersTab').hidden = !administrator();
-  document.querySelector('[data-tab-target="cooperativesSection"]').hidden = !administrator();
-  $('sessionLabel').textContent = (administrator() ? 'Administrador: ' : 'Mi espacio: ') + user.name;
+  updateAccess();
   for (const id of ['refreshCloud', 'changePassword', 'logoutButton']) $(id).hidden = false;
   $('accessScreen').hidden = true;
   $('appShell').hidden = false;
@@ -153,13 +198,8 @@ async function refresh() {
     user = data.user;
     users = data.users;
     const changed = receive(data);
-    $('usersTab').hidden = !administrator();
-    $('sessionLabel').textContent = (administrator() ? 'Administrador: ' : 'Mi espacio: ') + user.name;
-    document.querySelector('[data-tab-target="cooperativesSection"]').hidden = !administrator();
-    if (!administrator() && document.querySelector('#usersSection.active, #cooperativesSection.active')) {
-      document.querySelector('[data-tab-target="dashboardSection"]').click();
-    }
-    if (changed) drawUsers();
+    updateAccess();
+    if (JSON.stringify(users) !== usersSignature) drawUsers();
     status((changed ? 'Datos actualizados' : 'Sin cambios') + ' a las ' + new Date().toLocaleTimeString('es-SV') + '.');
   } catch (error) { status(error.message || 'Sin conexion. Intente actualizar nuevamente.'); }
   finally { refreshing = false; }
@@ -220,9 +260,11 @@ function showPassword(mode, token) {
   $('appShell').hidden = true;
   $('loginForm').hidden = true;
   $('passwordForm').hidden = false;
-  $('accessTitle').textContent = mode === 'invite' ? 'Activar mi cuenta' : 'Cambiar usuario y contrasena';
+  $('accessTitle').textContent = mode === 'invite' ? 'Activar mi cuenta' : 'Cambiar mi contrasena';
   $('profileUsername').value = user?.username || '';
   $('profileUsername').disabled = mode === 'invite';
+  $('profileUsername').readOnly = true;
+  $('cancelPasswordChange').hidden = mode === 'invite';
   message('Use una contrasena de al menos 3 caracteres.');
   (mode === 'invite' ? $('newPassword') : $('profileUsername')).focus();
 }
@@ -280,23 +322,27 @@ $('passwordForm').addEventListener('submit', async event => {
 
 $('userForm').addEventListener('submit', async event => {
   event.preventDefault();
-  event.submitter.disabled = true;
+  const button = event.submitter;
+  button.disabled = true;
   const currentEpoch = epoch;
   try {
     const editing = Boolean($('editUserId').value);
     await api('/api/users', { id: $('editUserId').value, name: $('userName').value, username: $('userUsername').value,
-      password: $('userPassword').value });
-    resetUserForm();
-    const data = await api('/api/users');
+      password: $('userPassword').value, role: $('userRole').value });
     if (epoch !== currentEpoch) return;
-    users = data.users; drawUsers();
+    resetUserForm();
+    await reloadAccounts();
     $('usersMessage').textContent = editing ? 'Cuenta actualizada.' : 'Cuenta creada. La persona puede ingresar con su usuario y contrasena.';
-  } catch (error) { $('userPassword').value = ''; $('usersMessage').textContent = error.message; }
-  finally { event.submitter.disabled = false; }
+  } catch (error) {
+    $('userPassword').value = ''; $('usersMessage').textContent = error.message;
+    if (error.status === 409) await reloadAccounts().catch(() => {});
+  }
+  finally { button.disabled = false; }
 });
 
 function resetUserForm() {
   $('userForm').reset(); $('editUserId').value = ''; $('userUsername').readOnly = false;
+  $('userRole').value = 'member'; $('userRole').disabled = false;
   $('userPassword').required = true; $('userPasswordLabel').textContent = 'Contrasena inicial (minimo 3 caracteres)';
   $('saveUserButton').textContent = 'Crear usuario'; $('cancelUserEdit').hidden = true;
 }
@@ -308,6 +354,17 @@ $('logoutButton').addEventListener('click', async () => {
   catch { message('No se pudo cerrar la sesion del servicio. Revise su conexion antes de dejar este equipo.'); }
 });
 $('changePassword').addEventListener('click', () => showPassword('change'));
+$('cancelPasswordChange').addEventListener('click', () => {
+  passwordMode = null; invitationToken = null; $('passwordForm').reset();
+  $('accessScreen').hidden = true; $('appShell').hidden = false;
+});
+$('refreshUsers').addEventListener('click', async event => {
+  const button = event.currentTarget; button.disabled = true;
+  try { await reloadAccounts(); $('usersMessage').textContent = 'Usuarios actualizados desde el servidor.'; }
+  catch (error) { $('usersMessage').textContent = error.message; }
+  finally { button.disabled = false; }
+});
+$('usersTab').addEventListener('click', () => reloadAccounts().catch(error => { $('usersMessage').textContent = error.message; }));
 $('refreshCloud').addEventListener('click', refresh);
 for (const kind of ['case', 'task']) {
   $(kind + 'Account').addEventListener('change', () => {

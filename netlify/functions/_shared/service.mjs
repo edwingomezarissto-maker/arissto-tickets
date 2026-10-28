@@ -1,7 +1,6 @@
 import { DataError, isAdmin, emptyData, visibleData, applyOperations } from './records.mjs';
+import { publicAccount as publicUser, accountRole, accountUsername, listAccounts, validateAccountChange } from './accounts.mjs';
 
-const publicUser = user => ({ id: user.id, name: user.name || user.email || 'Usuario',
-  username: user.appMetadata?.username || (user.email || '').split('@')[0], roles: user.roles || [] });
 const cleanUsername = value => typeof value === 'string' ? value.trim() : '';
 const usernameEmail = username => username.toLowerCase() + '@arissto.invalid';
 const validPassword = value => typeof value === 'string' && value.length >= 3 && value.length <= 128;
@@ -12,21 +11,11 @@ const TARGET_EDWIN_USERNAME = 'EGOMEZ';
 
 export function createService({ getUser, admin, getStore }) {
   async function users() {
-    const result = [];
-    for (let page = 1; ; page++) {
-      const batch = await admin.listUsers({ page, perPage: 100 });
-      result.push(...batch.filter(permitted).map(publicUser));
-      if (batch.length < 100) return result;
-    }
+    return (await rawUsers()).map(publicUser);
   }
 
   async function rawUsers() {
-    const result = [];
-    for (let page = 1; ; page++) {
-      const batch = await admin.listUsers({ page, perPage: 100 });
-      result.push(...batch);
-      if (batch.length < 100) return result;
-    }
+    return listAccounts(admin);
   }
 
   async function migrateLegacyEdwinOwnership(store, user) {
@@ -44,11 +33,12 @@ export function createService({ getUser, admin, getStore }) {
       for (const collection of ['cases', 'tasks']) {
         for (const row of next[collection] || []) {
           const legacyOwnerId = legacy && row.ownerId === legacy.id;
-          const legacyOwnerName = String(row.owner || '').trim().toLowerCase() === LEGACY_EDWIN_NAME;
+          const legacyOwnerName = !row.ownerId && String(row.owner || '').trim().toLowerCase() === LEGACY_EDWIN_NAME;
           if (row.ownerId !== user.id && (legacyOwnerId || legacyOwnerName)) {
             row.ownerId = user.id;
             row.owner = 'Edwin Gomez';
             row.updatedAt = new Date().toISOString();
+            row._version = crypto.randomUUID();
             changed = true;
           }
         }
@@ -75,6 +65,7 @@ export function createService({ getUser, admin, getStore }) {
             row.ownerId = toUser.id;
             row.owner = ownerName;
             row.updatedAt = new Date().toISOString();
+            row._version = crypto.randomUUID();
             transferred += 1;
           }
         }
@@ -87,13 +78,17 @@ export function createService({ getUser, admin, getStore }) {
     throw new DataError('No se pudieron transferir los registros del usuario. Intente nuevamente.', 409);
   }
 
-  async function updateAccount(existing, { name, username, password }) {
+  async function updateAccount(existing, { name, username, password, role = accountRole(existing) || 'member' }) {
     const nextUsername = cleanUsername(username);
     if (!/^[A-Za-z0-9._-]{3,40}$/.test(nextUsername)) throw new DataError('Ingrese un usuario valido de 3 a 40 caracteres.');
     if (password && !validPassword(password)) throw new DataError('La contrasena debe contener de 3 a 128 caracteres.');
+    validateAccountChange(existing, nextUsername, role);
+    if (isAdmin(existing) && role !== 'admin' && (await rawUsers()).filter(isAdmin).length <= 1) {
+      throw new DataError('Debe conservar al menos una cuenta de administrador.', 403);
+    }
     const updates = { email: usernameEmail(nextUsername),
       user_metadata: { ...existing.userMetadata, full_name: (name || existing.name || nextUsername).trim() },
-      app_metadata: { ...existing.appMetadata, roles: existing.roles || [], username: nextUsername } };
+      app_metadata: { ...existing.appMetadata, roles: [role], username: nextUsername } };
     if (password) updates.password = password;
     return admin.updateUser(existing.id, updates);
   }
@@ -126,7 +121,8 @@ export function createService({ getUser, admin, getStore }) {
       if (path === '/api/profile') {
         if (request.method === 'GET') return reply({ user: publicUser(user) });
         const wantsPassword = typeof body.password === 'string' && body.password.length > 0;
-        const updated = await updateAccount(user, { name: user.name || body.username, username: body.username,
+        if (body.role !== undefined || body.roles !== undefined) throw new DataError('Solo un administrador puede cambiar el acceso.', 403);
+        const updated = await updateAccount(user, { name: user.name || body.username, username: body.username || accountUsername(user),
           password: wantsPassword ? body.password : '' });
         return reply({ user: publicUser(updated) });
       }
@@ -139,7 +135,6 @@ export function createService({ getUser, admin, getStore }) {
           if (typeof body.id !== 'string' || !body.id) throw new DataError('Cuenta invalida.');
           if (body.id === user.id) throw new DataError('No puede eliminar la cuenta con la que tiene la sesion iniciada.', 403);
           const existing = await admin.getUser(body.id);
-          if (!permitted(existing)) throw new DataError('La cuenta no pertenece al equipo.', 403);
           if (isAdmin(existing)) {
             const allUsers = await rawUsers();
             const adminCount = allUsers.filter(item => permitted(item) && isAdmin(item)).length;
@@ -151,22 +146,28 @@ export function createService({ getUser, admin, getStore }) {
           return reply({ ok: true, transferred, users: await users() });
         }
 
+        const role = body.role === undefined ? (body.id ? null : 'member') : body.role;
+        if (role !== null && !['admin', 'member'].includes(role)) throw new DataError('Seleccione Administrador o Usuario comun.');
         if (typeof body.name !== 'string' || !body.name.trim() || body.name.length > 150 ||
             typeof body.username !== 'string' || !/^[A-Za-z0-9._-]{3,40}$/.test(body.username) ||
             typeof body.password !== 'string' || body.password.length > 128 ||
             ((!body.id || body.password) && body.password.length < 3)) {
           throw new DataError('Complete nombre, usuario y una contrasena de 3 a 128 caracteres.');
         }
+        const username = cleanUsername(body.username);
+        const duplicate = (await rawUsers()).find(account => account.id !== body.id && (
+          (account.email || '').toLowerCase() === usernameEmail(username) || accountUsername(account).toLowerCase() === username.toLowerCase()));
+        if (duplicate) throw new DataError('El usuario ' + username + ' ya existe. Use Editar en su fila para cambiar sus datos o acceso.', 409);
         if (body.id) {
           if (typeof body.id !== 'string') throw new DataError('Cuenta invalida.');
           const existing = await admin.getUser(body.id);
-          if (!permitted(existing)) throw new DataError('La cuenta no pertenece al equipo.', 403);
-          const updated = await updateAccount(existing, { name: body.name.trim(), username: body.username, password: body.password });
+          const updated = await updateAccount(existing, { name: body.name.trim(), username, password: body.password,
+            role: role || accountRole(existing) || 'member' });
           return reply({ user: publicUser(updated) });
         }
-        const username = cleanUsername(body.username);
+        validateAccountChange(null, username, role);
         const created = await admin.createUser({ email: usernameEmail(username), password: body.password,
-          data: { user_metadata: { full_name: body.name.trim() }, app_metadata: { roles: ['member'], username } } });
+          data: { user_metadata: { full_name: body.name.trim() }, app_metadata: { roles: [role], username } } });
         return reply({ user: publicUser(created) }, 201);
       }
 

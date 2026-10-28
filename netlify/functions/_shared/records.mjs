@@ -6,6 +6,19 @@ export class DataError extends Error {
 export const isAdmin = (user) => user?.roles?.includes('admin') === true;
 export const emptyData = () => ({ cases: [], tasks: [], cooperatives: [] });
 const collections = ['cases', 'tasks', 'cooperatives'];
+export function compactData(data) {
+  const next = structuredClone(data);
+  next.deletedIds = Object.fromEntries(collections.map(key => {
+    const ids = new Set(data.deletedIds?.[key] || []);
+    next[key] = (data[key] || []).filter(row => {
+      if (!row.deleted) return true;
+      ids.add(row.id);
+      return false;
+    });
+    return [key, [...ids]];
+  }));
+  return next;
+}
 const canRead = (row, user) => isAdmin(user) || row.ownerId === user.id;
 export function visibleData(data, user) {
   return Object.fromEntries(collections.map(key => [key, data[key].filter(row =>
@@ -53,7 +66,7 @@ function cleanRow(kind, raw) {
 export function applyOperations(data, operations, user, allowedOwners = new Set(), importing = false) {
   if (!Array.isArray(operations) || operations.length > 1000) throw new DataError('Operacion invalida.');
   if (importing && !isAdmin(user)) throw new DataError('Solo el administrador puede trasladar registros.', 403);
-  const next = structuredClone(data);
+  const next = compactData(data);
   for (const op of operations) {
     if (!collections.includes(op.collection) || typeof op.id !== 'string' || !op.id || op.id.length > 200) throw new DataError('Registro invalido.');
     const kind = op.collection;
@@ -62,13 +75,15 @@ export function applyOperations(data, operations, user, allowedOwners = new Set(
     const previous = rows[index];
     if (kind === 'cooperatives' && !isAdmin(user)) throw new DataError('Solo el administrador puede editar cooperativas.', 403);
     if (previous && kind !== 'cooperatives' && !canRead(previous, user)) throw new DataError('No tiene acceso a este registro.', 403);
-    if (importing && previous) continue;
-    if (previous?.deleted || (previous && previous._version !== op.version) || (!previous && op.version)) {
+    const deleted = next.deletedIds[kind].includes(op.id);
+    if (importing && (previous || deleted)) continue;
+    if (deleted || (previous && previous._version !== op.version) || (!previous && op.version)) {
       throw new DataError('El registro cambio en otro equipo. Revise la version actual antes de guardar.', 409);
     }
     if (op.action === 'delete') {
       if (!previous || importing) throw new DataError('No se puede eliminar este registro.', 400);
-      rows[index] = { ...previous, deleted: true, updatedAt: new Date().toISOString(), _version: randomUUID() };
+      rows.splice(index, 1);
+      next.deletedIds[kind].push(op.id);
       continue;
     }
     if (op.action !== 'put') throw new DataError('Accion invalida.');

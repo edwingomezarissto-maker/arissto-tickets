@@ -114,7 +114,7 @@ test('API permite guardar, leer desde otro equipo y reintenta escrituras concurr
 });
 test('crear cuenta solo retorna datos de perfil, nunca la contrasena', async () => {
   const h = harness(root);
-  const response = await h.service(request('/api/users', { name: 'Persona', username: 'Persona', password: '123', role: 'admin' }));
+  const response = await h.service(request('/api/users', { name: 'Persona', username: 'Persona', password: '123' }));
   assert.equal(response.status, 201);
   assert.deepEqual(h.created().data.app_metadata.roles, ['member']);
   assert.equal(h.created().email, 'persona@arissto.invalid');
@@ -125,15 +125,17 @@ test('el administrador puede editar el perfil y restablecer una clave sin cambia
   let updated;
   const service = createService({ getUser: async () => root,
     admin: { getUser: async id => id === root.id ? root : a,
+      listUsers: async () => [root, a],
       updateUser: async (id, attributes) => { updated = { id, attributes }; return { ...a, name: attributes.user_metadata.full_name }; } },
     getStore: () => { throw new Error('No debe consultar los casos'); },
   });
-  const result = await service(request('/api/users', { id: a.id, name: 'Nombre corregido', username: 'edwin', password: '456', role: 'admin' }));
+  const result = await service(request('/api/users', { id: a.id, name: 'Nombre corregido', username: 'edwin', password: '456' }));
   assert.equal(result.status, 200);
   assert.equal(updated.id, a.id);
   assert.equal(updated.attributes.password, '456');
   assert.equal(updated.attributes.email, 'edwin@arissto.invalid');
   assert.equal(updated.attributes.app_metadata.username, 'edwin');
+  assert.deepEqual(updated.attributes.app_metadata.roles, ['member']);
   assert.ok(!(await result.text()).includes('456'));
 });
 
