@@ -46,6 +46,7 @@ function lock(text) {
   $('sessionLabel').textContent = '';
   $('loginPassword').value = '';
   $('passwordForm').reset();
+  window.ARISSTO_APP.setCatalogAccess(false);
   window.ARISSTO_APP.clear();
   showLogin(text);
 }
@@ -116,9 +117,11 @@ function drawUsers() {
 
 function updateAccess() {
   $('usersTab').hidden = !administrator();
-  document.querySelector('[data-tab-target="cooperativesSection"]').hidden = !administrator();
+  document.querySelector('[data-tab-target="cooperativesSection"]').hidden = false;
+  window.ARISSTO_APP.setCatalogAccess(administrator());
+  document.querySelectorAll('[data-catalog-admin]').forEach(element => { element.hidden = !administrator(); });
   $('sessionLabel').textContent = (administrator() ? 'Administrador: ' : 'Mi espacio: ') + user.name;
-  if (!administrator() && document.querySelector('#usersSection.active, #cooperativesSection.active')) {
+  if (!administrator() && document.querySelector('#usersSection.active')) {
     document.querySelector('[data-tab-target="dashboardSection"]').click();
   }
 }
@@ -230,8 +233,7 @@ async function commit(candidate) {
         const latest = await api('/api/support').catch(() => null);
         if (latest && epoch === currentEpoch) {
           receive(latest, true);
-          window.ARISSTO_APP.clearModals?.();
-          status('El registro cambio en otro equipo. Se cargo la version actual; vuelva a abrirlo para editar.');
+          status('El registro cambio en otro equipo. Lo escrito sigue en el formulario; revise la version actual antes de volver a guardar.');
         }
       }
     }
@@ -376,4 +378,24 @@ window.addEventListener('online', refresh);
 setInterval(() => { if (!document.hidden) refresh(); }, 60000);
 
 window.ARISSTO_CLOUD = { start, commit, prepareAssignment,
+  async changeCatalog(body) {
+    if (!connected || saving) throw new Error('Espere a que termine la operacion actual y vuelva a intentar.');
+    const currentEpoch = epoch;
+    const editingId = $('caseId').value;
+    const before = snapshot.cases.find(row => row.id === editingId);
+    const version = $('caseVersion').value;
+    saving = true;
+    try {
+      const data = await api('/api/support', body);
+      if (epoch !== currentEpoch) throw new Error('La sesion cambio. Vuelva a ingresar.');
+      const after = data.cases.find(row => row.id === editingId);
+      const unrelated = row => JSON.stringify(Object.fromEntries(Object.entries(row || {}).filter(([key]) =>
+        !['cooperativeId', 'contactId', 'cooperative', 'requester', 'requesterPhone', 'requesterPosition', '_version', 'updatedAt'].includes(key))));
+      if (before && after && before._version === version && unrelated(before) === unrelated(after)) $('caseVersion').value = after._version;
+      receive(data, true); status('Catalogo compartido actualizado.');
+      return data.created;
+    } finally { saving = false; }
+  },
+  canManageCatalog: () => local || administrator(),
   assignedAccount: kind => local || !user ? '' : administrator() ? $(kind + 'Account').value : user.id };
+

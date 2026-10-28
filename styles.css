@@ -732,6 +732,19 @@ html[data-theme="dark"] .status-en-espera {
 .hidden {
   display: none !important;
 }
+.catalog-field-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.catalog-field-actions button { min-height: 34px; padding: 7px 11px; }
+.catalog-picker-backdrop { z-index: 1200; }
+.modal.catalog-picker { width: min(560px, 100%); }
+.form-grid > label { align-content: start; }
+.catalog-results { display: grid; gap: 8px; max-height: 300px; overflow: auto; margin: 14px 0; }
+.catalog-result { text-align: left; display: grid; gap: 5px; padding: 12px; border: 1px solid var(--gray-300); border-radius: 8px; background: var(--white); color: var(--gray-900); cursor: pointer; }
+.catalog-result:hover, .catalog-result:focus-visible { border-color: var(--blue-600); background: var(--gray-100); }
+.catalog-result span { color: var(--gray-700); font-size: .85rem; }
+#catalogCreateForm { display: grid; gap: 14px; }
+.writing-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.writing-tools button { min-height: 32px; padding: 6px 10px; }
+.writing-status { color: var(--gray-700); font-size: .8rem; }
 
 .cooperative-layout {
   display: grid;
@@ -1139,4 +1152,5 @@ html[data-theme="dark"] .modal-backdrop {
     width: 100%;
   }
 }
+
 

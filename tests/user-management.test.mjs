@@ -170,3 +170,27 @@ test('la actualizacion limpia del servidor el contenido de registros eliminados 
   assert.deepEqual(saved.deletedIds.cases, ['old-deleted']);
   assert.ok(!JSON.stringify(saved).includes('Contenido viejo eliminado'));
 });
+
+test('cooperativas y telefonos se comparten entre cuentas; solo el administrador modifica el catalogo', async () => {
+  const h = fixture(); await ensureAccountPolicy(h.deps);
+  const account = await h.admin.getUser('ADMIN');
+  const operation = { collection: 'cooperatives', id: 'shared', action: 'put', record: {
+    name: 'Cooperativa compartida', contacts: [{ id: 'client', name: 'Cliente QA', phone: '70000001', position: 'Contacto' }],
+  } };
+  h.blobs.set('records', applyOperations(emptyData(), [operation], account));
+  const snapshots = [];
+  for (const id of ['EGOMEZ', 'ADMIN', 'MCORDERO']) {
+    const response = await h.as(id)(request('/api/support'));
+    assert.equal(response.status, 200);
+    snapshots.push((await response.json()).cooperatives);
+  }
+  assert.deepEqual(snapshots[0], snapshots[2]);
+  assert.deepEqual(snapshots[1], snapshots[2]);
+  const changed = { ...operation, version: snapshots[0][0]._version,
+    record: { ...operation.record, contacts: [{ ...operation.record.contacts[0], phone: '70000002' }] } };
+  assert.equal((await h.as('MCORDERO')(request('/api/support', { operations: [changed] }))).status, 403);
+  assert.equal((await h.as('ADMIN')(request('/api/support', { operations: [changed] }))).status, 200);
+  const fresh = await (await h.as('MCORDERO')(request('/api/support'))).json();
+  assert.equal(fresh.cooperatives[0].contacts[0].phone, '70000002');
+});
+

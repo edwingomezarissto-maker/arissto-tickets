@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resolveCaseCatalog } from '../../../src/catalog.mjs';
 
 export class DataError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -22,10 +23,21 @@ export function compactData(data) {
 const canRead = (row, user) => isAdmin(user) || row.ownerId === user.id;
 export function visibleData(data, user) {
   return Object.fromEntries(collections.map(key => [key, data[key].filter(row =>
-    !row.deleted && (key === 'cooperatives' || canRead(row, user)))]));
+    !row.deleted && (key === 'cooperatives' || canRead(row, user))).map(row =>
+      key === 'cases' ? resolveCaseCatalog(row, data.cooperatives.filter(item => !item.deleted)) : row)]));
+}
+export function synchronizeCaseCatalog(data, touch = true) {
+  data.cases = data.cases.map(row => {
+    const resolved = resolveCaseCatalog(row, data.cooperatives);
+    if (touch && JSON.stringify(row) !== JSON.stringify(resolved)) {
+      resolved._version = randomUUID(); resolved.updatedAt = new Date().toISOString();
+    }
+    return resolved;
+  });
+  return data;
 }
 const fields = {
-  cases: ['title', 'cooperative', 'requester', 'requesterPhone', 'requesterPosition', 'owner',
+  cases: ['title', 'cooperativeId', 'contactId', 'cooperative', 'requester', 'requesterPhone', 'requesterPosition', 'owner',
     'status', 'priority', 'requestDate', 'commitmentDate', 'clientRequest', 'currentProcess', 'observations'],
   tasks: ['title', 'owner', 'status', 'progress', 'details'],
   cooperatives: ['name'],
@@ -67,6 +79,7 @@ export function applyOperations(data, operations, user, allowedOwners = new Set(
   if (!Array.isArray(operations) || operations.length > 1000) throw new DataError('Operacion invalida.');
   if (importing && !isAdmin(user)) throw new DataError('Solo el administrador puede trasladar registros.', 403);
   const next = compactData(data);
+  synchronizeCaseCatalog(next, false);
   for (const op of operations) {
     if (!collections.includes(op.collection) || typeof op.id !== 'string' || !op.id || op.id.length > 200) throw new DataError('Registro invalido.');
     const kind = op.collection;
@@ -88,6 +101,13 @@ export function applyOperations(data, operations, user, allowedOwners = new Set(
     }
     if (op.action !== 'put') throw new DataError('Accion invalida.');
     const row = cleanRow(kind, op.record);
+    if (kind === 'cases' && (row.cooperativeId || row.contactId)) {
+      const cooperative = next.cooperatives.find(item => item.id === row.cooperativeId);
+      if (!cooperative) throw new DataError('Seleccione una cooperativa vigente del catalogo.');
+      if (row.contactId && !cooperative.contacts.some(item => item.id === row.contactId)) {
+        throw new DataError('El cliente seleccionado no pertenece a esa cooperativa.');
+      }
+    }
     if (kind !== 'cooperatives') {
       row.ownerId = isAdmin(user) ? (op.record.ownerId || previous?.ownerId || user.id) : user.id;
       if (!isAdmin(user) && op.record.ownerId && op.record.ownerId !== user.id) throw new DataError('No puede asignar registros a otra cuenta.', 403);
@@ -103,5 +123,6 @@ export function applyOperations(data, operations, user, allowedOwners = new Set(
     if (previous) rows[index] = row;
     else rows.push(row);
   }
-  return next;
+  return synchronizeCaseCatalog(next);
 }
+

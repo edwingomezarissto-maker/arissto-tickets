@@ -157,7 +157,6 @@ async function refreshTaskStatusData() {
     };
     decorateTaskTable();
     updateDashboard();
-    syncStatusIntoModal();
   } catch {}
 }
 
@@ -166,6 +165,7 @@ async function saveTaskWithStatus(event) {
   event.preventDefault();
   event.stopImmediatePropagation();
   const form = byId('taskForm');
+  if (form?.dataset.saving === 'true') return;
   const title = byId('taskTitle')?.value.trim();
   const owner = byId('taskOwner')?.value.trim();
   const status = byId('taskStatus')?.value || 'Pendiente';
@@ -175,33 +175,38 @@ async function saveTaskWithStatus(event) {
     return;
   }
   const submit = form?.querySelector('button[type="submit"]');
+  const openCycle = byId('taskModal').dataset.openCycle;
+  const id = byId('taskId')?.value || createId();
+  byId('taskId').value = id;
+  const entered = { progress: byId('taskProgress')?.value.trim() || '', details: byId('taskDetails')?.value.trim() || '',
+    ownerId: byId('taskAccount')?.value || '' };
+  form.dataset.saving = 'true';
   if (submit) submit.disabled = true;
   try {
     const latest = await supportApi();
-    const id = byId('taskId')?.value || createId();
     const previous = (latest.tasks || []).find(task => task.id === id);
-    const selectedAccount = byId('taskAccount')?.value || '';
     const record = {
       ...(previous || {}),
       id,
       title,
       owner,
       status,
-      progress: byId('taskProgress')?.value.trim() || '',
-      details: byId('taskDetails')?.value.trim() || '',
-      ownerId: selectedAccount || previous?.ownerId || latest.user?.id || '',
+      progress: entered.progress,
+      details: entered.details,
+      ownerId: entered.ownerId || previous?.ownerId || latest.user?.id || '',
     };
     const operation = {
       collection: 'tasks', id, action: 'put', version: previous?._version || null, record,
     };
     await supportApi({ operations: [operation] });
     if (alert) { alert.textContent = ''; alert.classList.remove('visible'); }
-    document.querySelector('[data-close-task]')?.click();
+    if (byId('taskModal').dataset.openCycle === openCycle) document.querySelector('[data-close-task]')?.click();
     byId('refreshCloud')?.click();
     setTimeout(refreshTaskStatusData, 350);
   } catch (error) {
     if (alert) { alert.textContent = error.message; alert.classList.add('visible'); }
   } finally {
+    delete form.dataset.saving;
     if (submit) submit.disabled = false;
   }
 }
@@ -231,3 +236,4 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshTaskStatusData();
 });
 window.addEventListener('focus', refreshTaskStatusData);
+

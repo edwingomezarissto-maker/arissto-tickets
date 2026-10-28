@@ -14,7 +14,7 @@
   exportCard.className = 'migration-card';
   exportCard.innerHTML = `
     <h3>Exportar cooperativas y clientes</h3>
-    <p>Descarga un respaldo JSON con cada cooperativa y sus personas/clientes, teléfono y cargo.</p>
+    <p>Descarga el catálogo compartido de cooperativas y clientes, con teléfono y cargo. Es el mismo para todas las cuentas.</p>
     <div class="migration-actions">
       <button class="primary-button" id="exportCooperativesContacts" type="button">Exportar cooperativas y clientes</button>
     </div>
@@ -22,9 +22,11 @@
 
   const importCard = document.createElement('article');
   importCard.className = 'migration-card';
+  importCard.dataset.catalogAdmin = '';
+  importCard.hidden = true;
   importCard.innerHTML = `
     <h3>Importar cooperativas y clientes</h3>
-    <p>Importe un respaldo generado por ARISSTO. Puede combinarlo con el catálogo actual o reemplazarlo completamente.</p>
+    <p>Importe un respaldo al catálogo compartido. Las cooperativas, clientes y teléfonos se actualizarán para todas las cuentas.</p>
     <label>
       <span>Archivo JSON</span>
       <input type="file" id="importCooperativesFile" accept="application/json,.json" />
@@ -183,6 +185,10 @@
 
   byId('importCooperativesContacts').addEventListener('click', async event => {
     const button = event.currentTarget;
+    if (!window.ARISSTO_CLOUD?.canManageCatalog()) {
+      showStatus('Solo un administrador puede modificar el catalogo compartido.', true);
+      return;
+    }
     const file = byId('importCooperativesFile').files?.[0];
     if (!file) {
       showStatus('Seleccione un archivo JSON de cooperativas y clientes.', true);
@@ -207,7 +213,7 @@
 
       let next;
       if (mode === 'replace') {
-        const accepted = confirm(`Se reemplazarán ${current.length} cooperativas actuales por ${imported.length} cooperativas del archivo (${incomingClients} clientes/personas). ¿Desea continuar?`);
+        const accepted = confirm(`Se reemplazará el catálogo compartido para todas las cuentas: ${current.length} cooperativas actuales por ${imported.length} cooperativas del archivo (${incomingClients} clientes/personas). ¿Desea continuar?`);
         if (!accepted) return;
         next = imported.map(cooperative => ({ ...cooperative, id: createId(), contacts: cooperative.contacts.map(contact => ({ ...contact, id: createId() })) }));
       } else {
@@ -232,3 +238,4 @@
     }
   });
 })();
+

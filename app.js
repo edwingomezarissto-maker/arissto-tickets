@@ -209,6 +209,9 @@ const formFields = {
   id: document.getElementById("caseId"),
   title: document.getElementById("caseTitle"),
   cooperative: document.getElementById("cooperative"),
+  cooperativeId: document.getElementById("caseCooperativeId"),
+  version: document.getElementById("caseVersion"),
+  contactId: document.getElementById("caseContactId"),
   requester: document.getElementById("requester"),
   requesterPhone: document.getElementById("requesterPhone"),
   requesterPosition: document.getElementById("requesterPosition"),
@@ -249,8 +252,31 @@ const taskFields = {
 };
 
 document.addEventListener("DOMContentLoaded", init);
+let catalogCanEdit = location.protocol === "file:";
 
 window.ARISSTO_APP = {
+  catalog: () => structuredClone(state.cooperatives),
+  caseSelection: () => ({ cooperativeId: formFields.cooperativeId.value, contactId: formFields.contactId.value }),
+  selectCooperative(id) {
+    const cooperative = state.cooperatives.find(item => item.id === id);
+    if (!cooperative) return;
+    if (formFields.cooperativeId.value !== id) clearRequesterAutofill(true);
+    formFields.cooperativeId.value = id; formFields.cooperative.value = cooperative.name;
+    updateCaseCatalogButtons(); renderRequesterOptions();
+  },
+  selectContact(id) {
+    const cooperative = state.cooperatives.find(item => item.id === formFields.cooperativeId.value);
+    const contact = cooperative?.contacts.find(item => item.id === id);
+    if (!contact) return;
+    formFields.contactId.value = id; formFields.requester.value = contact.name;
+    formFields.requesterPhone.value = contact.phone || ''; formFields.requesterPosition.value = contact.position || '';
+    updateCaseCatalogButtons();
+  },
+  setCatalogAccess(canEdit) {
+    catalogCanEdit = canEdit;
+    document.querySelectorAll('[data-catalog-admin]').forEach(element => { element.hidden = !canEdit; });
+    renderSelectedCooperative();
+  },
   clearModals() {
     closeCaseModal(); closeTaskModal(); closeDetailModal(); closeProcessModal();
   },
@@ -307,6 +333,7 @@ function init() {
   bindEvents();
   render();
   if (local) {
+    window.ARISSTO_APP.setCatalogAccess(true);
     document.getElementById("accessScreen").hidden = true;
     document.getElementById("appShell").hidden = false;
     document.getElementById("syncStatus").textContent = "Guardado en este navegador. La sincronizacion requiere ingresar al sitio web.";
@@ -383,17 +410,11 @@ function bindEvents() {
     button.addEventListener("click", closeTaskModal);
   });
 
-  elements.caseModal.addEventListener("click", closeWhenBackdrop);
   elements.detailModal.addEventListener("click", closeWhenBackdrop);
-  elements.processModal.addEventListener("click", closeWhenBackdrop);
-  elements.taskModal.addEventListener("click", closeWhenBackdrop);
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      closeCaseModal();
       closeDetailModal();
-      closeProcessModal();
-      closeTaskModal();
     }
   });
 
@@ -499,6 +520,8 @@ function normalizeCaseRecord(supportCase) {
 
   return {
     id: String(supportCase.id || createId()).trim(),
+    cooperativeId: cleanText(supportCase.cooperativeId),
+    contactId: cleanText(supportCase.contactId),
     ownerId: supportCase.ownerId || "",
     _version: supportCase._version || "",
     title: cleanText(supportCase.title || supportCase.caseName || supportCase.case || supportCase.name),
@@ -701,6 +724,9 @@ async function importSelectedCasesAndTasks() {
 
 function normalizeImportedCase(row) {
   const normalized = normalizeCaseRecord(row || {});
+  const cooperative = state.cooperatives.find(item => item.id === normalized.cooperativeId);
+  if (!cooperative) { normalized.cooperativeId = ''; normalized.contactId = ''; }
+  else if (!cooperative.contacts.some(item => item.id === normalized.contactId)) normalized.contactId = '';
   delete normalized._version;
   normalized.ownerId = "";
   return normalized;
@@ -1315,7 +1341,7 @@ function renderSelectedCooperative() {
 
   if (!cooperative) {
     elements.selectedCooperativeTitle.textContent = "Seleccione una cooperativa";
-    elements.selectedCooperativeHelp.textContent = "Al seleccionar una cooperativa podra agregar personas, telefono y cargo.";
+    elements.selectedCooperativeHelp.textContent = "Seleccione una cooperativa para consultar sus clientes y telefonos.";
     elements.contactFieldset.disabled = true;
     elements.contactsEmptyState.textContent = "Seleccione una cooperativa para ver sus personas.";
     elements.contactsEmptyState.classList.add("visible");
@@ -1323,7 +1349,9 @@ function renderSelectedCooperative() {
   }
 
   elements.selectedCooperativeTitle.textContent = cooperative.name;
-  elements.selectedCooperativeHelp.textContent = "Agregue personas para usar sus datos al crear casos.";
+  elements.selectedCooperativeHelp.textContent = catalogCanEdit
+    ? "Los cambios de clientes y telefonos se comparten con todas las cuentas."
+    : "Catalogo compartido. Puede usar estos clientes y telefonos al crear sus casos.";
   elements.contactFieldset.disabled = false;
 
   if (cooperative.contacts.length === 0) {
@@ -1339,12 +1367,12 @@ function renderSelectedCooperative() {
       <td><span class="case-name">${escapeHtml(contact.name)}</span></td>
       <td>${escapeHtml(contact.position || "Sin cargo")}</td>
       <td>${escapeHtml(contact.phone)}</td>
-      <td>
+      ${catalogCanEdit ? `<td>
         <div class="actions compact-actions">
           <button class="text-button" type="button" data-action="edit-contact" data-id="${contact.id}">Editar</button>
           <button class="danger-button" type="button" data-action="delete-contact" data-id="${contact.id}">Eliminar</button>
         </div>
-      </td>
+      </td>` : ''}
     `;
     elements.contactsTableBody.appendChild(row);
   });
@@ -1359,7 +1387,7 @@ function renderDatalists() {
 
 function renderRequesterOptions() {
   const cooperative = findCooperativeByName(formFields.cooperative.value);
-  const contacts = cooperative ? cooperative.contacts : getAllContacts();
+  const contacts = cooperative ? cooperative.contacts : [];
   elements.requesterOptions.innerHTML = contacts
     .map((contact) => `<option value="${escapeHtml(contact.name)}"></option>`)
     .join("");
@@ -1369,6 +1397,10 @@ function openCreateModal() {
   elements.caseModalTitle.textContent = "Crear caso";
   elements.caseForm.reset();
   formFields.id.value = "";
+  formFields.version.value = "";
+  formFields.cooperativeId.value = "";
+  formFields.contactId.value = "";
+  updateCaseCatalogButtons();
   window.ARISSTO_CLOUD?.prepareAssignment("case");
   clearValidation(elements.caseForm, elements.formAlert);
   renderDatalists();
@@ -1412,8 +1444,11 @@ function openEditModal(id) {
 
   elements.caseModalTitle.textContent = "Editar caso";
   formFields.id.value = supportCase.id;
+  formFields.version.value = supportCase._version || '';
   formFields.title.value = supportCase.title;
   formFields.cooperative.value = supportCase.cooperative;
+  formFields.cooperativeId.value = supportCase.cooperativeId || '';
+  formFields.contactId.value = supportCase.contactId || '';
   formFields.requester.value = supportCase.requester || "";
   formFields.requesterPhone.value = supportCase.requesterPhone || "";
   formFields.requesterPosition.value = supportCase.requesterPosition || "";
@@ -1425,6 +1460,7 @@ function openEditModal(id) {
   formFields.clientRequest.value = supportCase.clientRequest;
   formFields.currentProcess.value = supportCase.currentProcess;
   formFields.observations.value = supportCase.observations || "";
+  updateCaseCatalogButtons();
   window.ARISSTO_CLOUD?.prepareAssignment("case", supportCase);
   clearValidation(elements.caseForm, elements.formAlert);
   renderDatalists();
@@ -1489,6 +1525,7 @@ function closeProcessModal() {
 }
 
 function openModal(modal) {
+  modal.dataset.openCycle = String(Number(modal.dataset.openCycle || 0) + 1);
   modal.classList.add("open");
   modal.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
@@ -1510,13 +1547,13 @@ function closeWhenBackdrop(event) {
 
 async function handleCaseSubmit(event) {
   event.preventDefault();
+  if (elements.caseForm.dataset.saving === 'true') return;
   clearValidation(elements.caseForm, elements.formAlert);
 
   const requiredFields = [
     formFields.title,
     formFields.cooperative,
     formFields.requester,
-    formFields.requesterPhone,
     formFields.owner,
     formFields.status,
     formFields.priority,
@@ -1529,12 +1566,40 @@ async function handleCaseSubmit(event) {
     return;
   }
 
+  if (!formFields.cooperativeId.value || !formFields.contactId.value) {
+    showAlert(elements.formAlert, 'Busque y seleccione la cooperativa y uno de sus clientes. Si no existen, puede crearlos aqui.');
+    return;
+  }
+
+  await runFormSave(elements.caseForm, elements.caseModal, () => persistCaseForm(elements.caseModal.dataset.openCycle));
+}
+
+async function runFormSave(form, modal, persist) {
+  if (form.dataset.saving === 'true') return;
+  const button = form.querySelector('button[type="submit"]');
+  form.dataset.saving = 'true';
+  if (button) button.disabled = true;
+  try { await persist(); }
+  catch (error) {
+    const alert = modal.querySelector('.alert');
+    if (alert) showAlert(alert, error.message || 'No se pudo guardar. Sus datos siguen en el formulario.');
+  } finally {
+    delete form.dataset.saving;
+    if (button) button.disabled = false;
+  }
+}
+
+async function persistCaseForm(openCycle) {
+
   const now = new Date().toISOString();
   const id = formFields.id.value;
   const caseData = {
+    _version: formFields.version.value,
     ownerId: window.ARISSTO_CLOUD?.assignedAccount("case") || "",
     title: formFields.title.value.trim(),
     cooperative: formFields.cooperative.value.trim(),
+    cooperativeId: formFields.cooperativeId.value,
+    contactId: formFields.contactId.value,
     requester: formFields.requester.value.trim(),
     requesterPhone: formFields.requesterPhone.value.trim(),
     requesterPosition: formFields.requesterPosition.value.trim(),
@@ -1548,7 +1613,7 @@ async function handleCaseSubmit(event) {
     observations: formFields.observations.value.trim(),
   };
 
-  if (id) {
+  if (id && state.cases.some(row => row.id === id)) {
     state.cases = state.cases.map((supportCase) =>
       supportCase.id === id
         ? {
@@ -1559,8 +1624,10 @@ async function handleCaseSubmit(event) {
         : supportCase
     );
   } else {
+    const nextId = id || createId();
+    formFields.id.value = nextId;
     state.cases.unshift({
-      id: createId(),
+      id: nextId,
       ...caseData,
       createdAt: now,
       updatedAt: now,
@@ -1568,18 +1635,25 @@ async function handleCaseSubmit(event) {
   }
 
   if (!await saveCases()) return;
-  closeCaseModal();
+  const sameWindow = elements.caseModal.dataset.openCycle === openCycle && elements.caseModal.getAttribute('aria-hidden') === 'false';
+  if (sameWindow) closeCaseModal();
   render();
-  activateTab("casesSection");
+  if (sameWindow) activateTab("casesSection");
 }
 
 async function handleTaskSubmit(event) {
   event.preventDefault();
+  if (elements.taskForm.dataset.saving === 'true') return;
   clearValidation(elements.taskForm, elements.taskAlert);
 
   if (!validateRequiredFields([taskFields.title, taskFields.owner], elements.taskAlert)) {
     return;
   }
+
+  await runFormSave(elements.taskForm, elements.taskModal, () => persistTaskForm(elements.taskModal.dataset.openCycle));
+}
+
+async function persistTaskForm(openCycle) {
 
   const now = new Date().toISOString();
   const id = taskFields.id.value;
@@ -1611,18 +1685,25 @@ async function handleTaskSubmit(event) {
   }
 
   if (!await saveTasks()) return;
-  closeTaskModal();
+  const sameWindow = elements.taskModal.dataset.openCycle === openCycle && elements.taskModal.getAttribute('aria-hidden') === 'false';
+  if (sameWindow) closeTaskModal();
   renderTasksTable();
-  activateTab("tasksSection");
+  if (sameWindow) activateTab("tasksSection");
 }
 
 async function handleProcessSubmit(event) {
   event.preventDefault();
+  if (elements.processForm.dataset.saving === 'true') return;
   clearValidation(elements.processForm, elements.processAlert);
 
   if (!validateRequiredFields([processFields.process], elements.processAlert)) {
     return;
   }
+
+  await runFormSave(elements.processForm, elements.processModal, () => persistProcessForm(elements.processModal.dataset.openCycle));
+}
+
+async function persistProcessForm(openCycle) {
 
   const id = processFields.id.value;
   const now = new Date().toISOString();
@@ -1638,12 +1719,13 @@ async function handleProcessSubmit(event) {
   );
 
   if (!await saveCases()) return;
-  closeProcessModal();
+  if (elements.processModal.dataset.openCycle === openCycle && elements.processModal.getAttribute('aria-hidden') === 'false') closeProcessModal();
   render();
 }
 
 async function handleCooperativeSubmit(event) {
   event.preventDefault();
+  if (!catalogCanEdit) return;
   clearValidation(elements.cooperativeForm, elements.cooperativeAlert);
 
   if (!validateRequiredFields([cooperativeFields.name], elements.cooperativeAlert)) {
@@ -1662,17 +1744,9 @@ async function handleCooperativeSubmit(event) {
   }
 
   if (cooperativeFields.id.value) {
-    const oldCooperative = state.cooperatives.find((cooperative) => cooperative.id === cooperativeFields.id.value);
-    const oldName = oldCooperative?.name || "";
     state.cooperatives = state.cooperatives.map((cooperative) =>
       cooperative.id === cooperativeFields.id.value ? { ...cooperative, name } : cooperative
     );
-    if (oldName && oldName !== name) {
-      state.cases = state.cases.map((supportCase) =>
-        supportCase.cooperative === oldName ? { ...supportCase, cooperative: name } : supportCase
-      );
-      if (!await saveCases()) return;
-    }
   } else {
     const cooperative = createCooperative(name);
     state.cooperatives.push(cooperative);
@@ -1686,6 +1760,7 @@ async function handleCooperativeSubmit(event) {
 
 async function handleContactSubmit(event) {
   event.preventDefault();
+  if (!catalogCanEdit) return;
   clearValidation(elements.contactForm, elements.contactAlert);
 
   const cooperative = getSelectedCooperative();
@@ -1694,7 +1769,7 @@ async function handleContactSubmit(event) {
     return;
   }
 
-  if (!validateRequiredFields([contactFields.name, contactFields.phone], elements.contactAlert)) {
+  if (!validateRequiredFields([contactFields.name], elements.contactAlert)) {
     return;
   }
 
@@ -1759,6 +1834,7 @@ function handleCooperativeListAction(event) {
 }
 
 async function handleContactTableAction(event) {
+  if (!catalogCanEdit) return;
   const button = event.target.closest("button[data-action]");
   if (!button) {
     return;
@@ -1852,6 +1928,7 @@ function resetContactForm() {
 function clearRequesterAutofill(clearName) {
   if (clearName) {
     formFields.requester.value = "";
+    formFields.contactId.value = "";
   }
   formFields.requesterPhone.value = "";
   formFields.requesterPosition.value = "";
@@ -1869,6 +1946,12 @@ function autofillRequesterFromSelection() {
 
   formFields.requesterPhone.value = contact.phone;
   formFields.requesterPosition.value = contact.position || "";
+}
+
+function updateCaseCatalogButtons() {
+  const selected = Boolean(formFields.cooperativeId.value);
+  for (const id of ['searchRequester', 'createRequesterFromCase']) document.getElementById(id).disabled = !selected;
+  document.getElementById('editRequesterFromCase').disabled = !formFields.contactId.value;
 }
 
 function handleTableAction(event) {
@@ -2085,4 +2168,5 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
 

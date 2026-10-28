@@ -14,6 +14,8 @@ let nextAccountId = 1;
 let data = null;
 let etag = 0;
 let failNextWrite = false;
+let supportWriteGate = null;
+let supportWriteCount = 0;
 const store = {
   get: async () => data,
   getWithMetadata: async () => data ? { data, etag: String(etag) } : null,
@@ -67,8 +69,23 @@ const token = user => Buffer.from('{}').toString('base64url') + '.' + Buffer.fro
 const rawUser = user => ({ id: user.id, email: user.email, confirmed_at: '2026-01-01T00:00:00Z',
   app_metadata: { roles: user.roles, ...user.appMetadata }, user_metadata: { full_name: user.name } });
 
-async function context() {
+async function context({ speech = true } = {}) {
   const context = await browser.newContext();
+  await context.addInitScript(enabled => {
+    window.__speechInstances = [];
+    window.webkitSpeechRecognition = undefined;
+    window.SpeechRecognition = enabled ? class {
+      constructor() { this.results = []; window.__speechInstances.push(this); }
+      start() { this.onstart?.(); }
+      stop() { this.onend?.(); }
+      abort() { this.aborted = true; this.onend?.(); }
+      result(text, final = true, index = 0) {
+        this.results[index] = { 0: { transcript: text }, isFinal: final, length: 1 };
+        this.onresult?.({ resultIndex: index, results: this.results });
+      }
+      error(error) { this.onerror?.({ error }); }
+    } : undefined;
+  }, speech);
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
   await context.route('https://cdn.jsdelivr.net/**', route => route.fulfill({ contentType: 'text/javascript', body: 'window.Chart = class { constructor(){} destroy(){} };' }));
   await context.route('**/.netlify/identity/**', async route => {
@@ -95,6 +112,10 @@ async function context() {
   });
   await context.route('**/api/**', async route => {
     const req = route.request();
+    if (req.method() === 'POST' && req.url().endsWith('/api/support')) {
+      supportWriteCount++;
+      if (supportWriteGate) await supportWriteGate;
+    }
     if (failNextWrite && req.method() === 'POST' && req.url().endsWith('/api/support')) {
       failNextWrite = false;
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Prueba de perdida de conexion.' }) }); return;
@@ -207,7 +228,7 @@ try {
   await page.locator('#migrationAlert').getByText('El archivo seleccionado no contiene JSON válido.').waitFor();
   assert.equal(await page.locator('#importCooperativesContacts').isEnabled(), true,
     'invalid JSON must release the button so the user can retry');
-  const cooperatives = JSON.stringify({ cooperatives: [{ name: 'Cooperativa QA', contacts: [{ name: 'Cliente QA' }] }] });
+  const cooperatives = JSON.stringify({ cooperatives: [{ name: 'Cooperativa QA', contacts: [{ name: 'Cliente QA', phone: '70000001' }] }] });
   await upload('#importCooperativesFile', cooperatives);
   failNextWrite = true;
   await page.locator('#importCooperativesContacts').click();
@@ -227,6 +248,83 @@ try {
   await download;
   await page.locator('#migrationStatus').filter({ hasText: 'Respaldo generado:' }).waitFor();
   assert.equal(await page.locator('#exportCooperativesContacts').isEnabled(), true);
+  // A separate browser session sees the same shared catalog, with read-only controls.
+  await pa.locator('#refreshCloud').click();
+  await pa.locator('[data-tab-target="cooperativesSection"]').click();
+  await pa.locator('#contactsTableBody').getByText('Cliente QA', { exact: true }).waitFor();
+  assert.equal(await pa.locator('#contactsTableBody').getByText('70000001', { exact: true }).count(), 1);
+  assert.equal(await pa.locator('#cooperativeForm').isVisible(), false);
+  assert.equal(await pa.locator('#contactForm').isVisible(), false);
+  assert.equal(await pa.locator('#contactsTableBody [data-action="edit-contact"]').count(), 0);
+  await page.locator('[data-tab-target="cooperativesSection"]').click();
+  await page.locator('#contactsTableBody [data-action="edit-contact"]').click();
+  await page.locator('#contactPhone').fill('70000002');
+  await page.locator('#saveContactButton').click();
+  await page.locator('#contactsTableBody').getByText('70000002', { exact: true }).waitFor();
+  await pa.locator('#refreshCloud').click();
+  await pa.locator('#contactsTableBody').getByText('70000002', { exact: true }).waitFor();
+  await pa.locator('#openCreateCase').click();
+  await pa.locator('#searchCooperative').click();
+  await pa.keyboard.press('Escape');
+  assert.equal(await pa.locator('#caseModal').isVisible(), true);
+  assert.equal(await pa.locator('#catalogPicker').isVisible(), false);
+  await pa.locator('#searchCooperative').click();
+  await pa.locator('#catalogSearch').fill('Cooperativa QA');
+  await pa.locator('#catalogResults button').filter({ hasText: 'Cooperativa QA' }).click();
+  await pa.locator('#searchRequester').click();
+  await pa.screenshot({ path: 'qa-output/catalog-search-desktop.png' });
+  await pa.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await pa.locator('#catalogPicker .modal').evaluate(element => element.getBoundingClientRect().right <= innerWidth));
+  await pa.screenshot({ path: 'qa-output/catalog-search-mobile.png' });
+  await pa.setViewportSize({ width: 1440, height: 1000 });
+  await pa.locator('#catalogResults button').filter({ hasText: 'Cliente QA' }).click();
+  await pa.screenshot({ path: 'qa-output/case-catalog-fields.png' });
+  assert.equal(await pa.locator('#requesterPhone').inputValue(), '70000002');
+  const fillCase = async (target, title) => {
+    await target.locator('#caseTitle').fill(title); await target.locator('#status').selectOption('Abierto');
+    await target.locator('#priority').selectOption('Media'); await target.locator('#requestDate').fill('2026-10-28');
+    await target.locator('#clientRequest').fill('Solicitud de prueba'); await target.locator('#currentProcess').fill('Revision');
+  };
+  await fillCase(pa, 'Caso enlazado B');
+  await pa.locator('#caseForm button[type="submit"]').click();
+  await pa.locator('#caseModal').waitFor({ state: 'hidden' });
+  const linkedCase = data.cases.find(row => row.title === 'Caso enlazado B');
+  assert.ok(linkedCase.cooperativeId && linkedCase.contactId);
+  await pa.locator('#openCreateCase').click();
+  await pa.locator('#createCooperativeFromCase').click();
+  await pa.locator('#catalogNewName').fill('Otra cooperativa QA'); await pa.locator('#catalogSave').click();
+  await pa.locator('#catalogPicker').waitFor({ state: 'hidden' });
+  assert.equal(await pa.locator('#requester').inputValue(), '');
+  assert.equal(await pa.locator('#requesterPhone').inputValue(), '');
+  await pa.locator('#searchRequester').click();
+  assert.equal(await pa.locator('#catalogResults button').count(), 0, 'contacts must be filtered by selected cooperative');
+  await pa.locator('#catalogNewButton').click();
+  await pa.locator('#catalogNewName').fill('Cliente sin telefono'); await pa.locator('#catalogSave').click();
+  await pa.locator('#catalogPicker').waitFor({ state: 'hidden' });
+  assert.equal(await pa.locator('#requesterPhone').inputValue(), '');
+  assert.equal(await pa.locator('#requesterPosition').inputValue(), '');
+  await fillCase(pa, 'Caso sin telefono'); await pa.locator('#caseForm button[type="submit"]').click();
+  await pa.locator('#caseModal').waitFor({ state: 'hidden' });
+  assert.equal(data.cases.find(row => row.title === 'Caso sin telefono').requesterPhone, '');
+  await page.locator('[data-tab-target="casesSection"]').click(); await page.locator('#refreshCloud').click();
+  await page.locator('#casesTableBody tr').filter({ hasText: 'Caso enlazado B' }).locator('[data-action="edit"]').click();
+  await page.locator('#observations').fill('Nota historica conservada');
+  await page.locator('#editRequesterFromCase').click();
+  await page.locator('#catalogNewName').fill('Cliente QA actualizado'); await page.locator('#catalogNewPosition').fill('Gerente');
+  await page.locator('#catalogNewPhone').fill('70000003'); await page.locator('#catalogSave').click();
+  await page.locator('#catalogPicker').waitFor({ state: 'hidden' });
+  assert.equal(await page.locator('#requesterPhone').inputValue(), '70000003');
+  await page.locator('#caseForm button[type="submit"]').click(); await page.locator('#caseModal').waitFor({ state: 'hidden' });
+  const changedHistory = data.cases.find(row => row.id === linkedCase.id);
+  assert.equal(changedHistory.requesterPosition, 'Gerente'); assert.equal(changedHistory.observations, 'Nota historica conservada');
+  await pa.locator('#refreshCloud').click();
+  await pa.locator('#casesTableBody tr').filter({ hasText: 'Caso enlazado B' }).locator('[data-action="edit"]').click();
+  assert.equal(await pa.locator('#requesterPhone').inputValue(), '70000003');
+  assert.equal(await pa.locator('#requester').inputValue(), 'Cliente QA actualizado');
+  await pa.locator('[data-close-modal]').first().click();
+  await pa.locator('[data-tab-target="migrationSection"]').click();
+  assert.equal(await pa.locator('#importCooperativesContacts').isVisible(), false);
+  assert.equal(await pa.locator('#exportCooperativesContacts').isVisible(), true);
   for (const section of ['graphicDashboardSection', 'tasksSection', 'casesSection', 'migrationSection']) {
     await page.locator(`[data-tab-target="${section}"]`).click();
     assert.equal(await page.locator('#' + section).isVisible(), true);
@@ -306,6 +404,127 @@ try {
   await page.locator('[data-action="delete"][data-id="json-case"]').waitFor({ state: 'detached' });
   assert.equal(data.cases.some(row => row.id === 'json-case'), false);
   assert.ok(!JSON.stringify(data).includes('Caso importado JSON'));
+  await page.locator('#openCreateTask').click();
+  const dictated = page.locator('#taskProgress'); await dictated.fill('Se reviso');
+  await page.locator('[data-dictate-for="taskProgress"]').click();
+  await page.evaluate(() => window.__speechInstances.at(-1).result('el ticket', false));
+  assert.equal(await dictated.inputValue(), 'Se reviso');
+  await page.evaluate(() => { const speech = window.__speechInstances.at(-1); speech.result('el ticket'); speech.result('el ticket'); speech.result('sin errores', true, 1); });
+  assert.equal(await dictated.inputValue(), 'Se reviso el ticket sin errores');
+  await page.locator('[data-dictate-for="taskProgress"]').click();
+  assert.equal(await page.locator('[data-dictate-for="taskProgress"]').getAttribute('aria-pressed'), 'false');
+  assert.equal(await dictated.getAttribute('lang'), 'es-SV');
+  assert.equal(await dictated.evaluate(field => field.spellcheck), true);
+  await dictated.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'qa-output/task-writing-tools.png' });
+  await page.locator('#taskDetails').fill('Inicio viejo final');
+  await page.locator('#taskDetails').evaluate(field => field.setSelectionRange(7, 12));
+  await page.locator('[data-dictate-for="taskDetails"]').click();
+  await page.evaluate(() => window.__speechInstances.at(-1).result('nuevo'));
+  assert.equal(await page.locator('#taskDetails').inputValue(), 'Inicio nuevo final');
+  await page.locator('[data-dictate-for="taskDetails"]').click();
+  await page.locator('#taskDetails').fill('');
+  await page.locator('[data-dictate-for="taskDetails"]').click();
+  await page.evaluate(() => window.__speechInstances.at(-1).error('not-allowed'));
+  await page.getByText('Permita el acceso al microfono para dictar.', { exact: true }).waitFor();
+  await page.locator('[data-dictate-for="taskDetails"]').click();
+  await page.locator('[data-close-task]').first().click();
+  await page.evaluate(() => window.__speechInstances.at(-1).result('texto tardio'));
+  assert.equal(await page.locator('#taskDetails').inputValue(), '');
+  await page.locator('#openCreateCase').click();
+  await page.locator('[data-dictate-for="clientRequest"]').click();
+  await page.evaluate(() => window.__speechInstances.at(-1).result('El cliente solicita soporte.'));
+  assert.equal(await page.locator('#clientRequest').inputValue(), 'El cliente solicita soporte.');
+  await page.locator('[data-close-modal]').first().click();
+  const unsupportedContext = await context({ speech: false }); const unsupportedPage = await unsupportedContext.newPage();
+  await unsupportedPage.goto(url); await login(unsupportedPage, 'ADMIN', 'new-password-ADMIN');
+  await unsupportedPage.locator('#openCreateTask').click();
+  assert.equal(await unsupportedPage.locator('[data-dictate-for="taskProgress"]').isDisabled(), true);
+  await unsupportedPage.locator('#taskProgress').fill('La escritura sigue disponible.');
+  await unsupportedContext.close();
+  // Accidental backdrop clicks and Escape never discard case/task drafts.
+  await page.locator('#openCreateTask').click();
+  await page.locator('#taskTitle').fill('Tarea con atajo');
+  await page.locator('#taskProgress').fill('Texto que se debe conservar');
+  await page.locator('#taskModal').click({ position: { x: 2, y: 2 } }); await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#taskModal').isVisible(), true);
+  assert.equal(await page.locator('#taskProgress').inputValue(), 'Texto que se debe conservar');
+  const beforeCount = supportWriteCount;
+  let releaseWrite;
+  supportWriteGate = new Promise(resolve => { releaseWrite = resolve; });
+  const firstPost = page.waitForRequest(req => req.method() === 'POST' && req.url().endsWith('/api/support'));
+  await page.keyboard.press('Control+s'); await firstPost;
+  await page.keyboard.press('Control+s');
+  assert.equal(supportWriteCount, beforeCount + 1);
+  supportWriteGate = null; releaseWrite();
+  await page.locator('#taskModal').waitFor({ state: 'hidden' });
+  assert.equal(data.tasks.filter(task => task.title === 'Tarea con atajo').length, 1);
+  await page.locator('#openCreateTask').click();
+  await page.locator('#taskTitle').fill('Tarea con reintento de atajo');
+  failNextWrite = true; await page.keyboard.press('Control+s');
+  await page.locator('#taskAlert').getByText('Prueba de perdida de conexion.').waitFor();
+  assert.equal(await page.locator('#taskModal').isVisible(), true);
+  assert.equal(await page.locator('#taskTitle').inputValue(), 'Tarea con reintento de atajo');
+  await page.keyboard.press('Control+s'); await page.locator('#taskModal').waitFor({ state: 'hidden' });
+  assert.equal(data.tasks.filter(task => task.title === 'Tarea con reintento de atajo').length, 1);
+  await page.locator('#openCreateTask').click(); await page.locator('#taskTitle').fill('Guardado pendiente de ventana anterior');
+  supportWriteGate = new Promise(resolve => { releaseWrite = resolve; });
+  const pendingTask = page.waitForRequest(req => req.method() === 'POST' && req.url().endsWith('/api/support'));
+  await page.keyboard.press('Control+s'); await pendingTask;
+  await page.locator('[data-close-task]').first().click(); await page.locator('#openCreateTask').click();
+  await page.locator('#taskTitle').fill('Borrador de otra ventana');
+  supportWriteGate = null; releaseWrite();
+  await page.waitForFunction(() => document.getElementById('taskForm').dataset.saving !== 'true');
+  assert.equal(await page.locator('#taskModal').isVisible(), true, 'late save must not close a newly opened editor');
+  assert.equal(await page.locator('#taskTitle').inputValue(), 'Borrador de otra ventana');
+  assert.equal(data.tasks.filter(task => task.title === 'Guardado pendiente de ventana anterior').length, 1);
+  assert.equal(data.tasks.some(task => task.title === 'Borrador de otra ventana'), false);
+  await page.locator('[data-close-task]').last().click();
+  await page.locator('#openCreateCase').click();
+  await page.locator('#caseTitle').fill('Caso con atajo');
+  assert.equal(await page.locator('#caseVersion').inputValue(), '');
+  assert.equal(await page.locator('#caseCooperativeId').inputValue(), '');
+  assert.equal(await page.locator('#caseContactId').inputValue(), '');
+  await page.locator('#caseModal').click({ position: { x: 2, y: 2 } }); await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#caseModal').isVisible(), true);
+  assert.equal(await page.locator('#caseTitle').inputValue(), 'Caso con atajo');
+  await page.keyboard.press('Control+s');
+  assert.equal(await page.locator('#caseModal').isVisible(), true, 'invalid shortcut save must keep the draft open');
+  assert.equal(await page.locator('#formAlert').isVisible(), true);
+  await page.locator('#searchCooperative').click();
+  await page.keyboard.press('Control+s');
+  assert.equal(await page.locator('#catalogPicker').isVisible(), true);
+  assert.equal(await page.locator('#caseModal').isVisible(), true);
+  await page.locator('#catalogResults button').filter({ hasText: 'Cooperativa QA' }).filter({ hasNotText: 'Otra cooperativa' }).click();
+  await page.locator('#searchRequester').click();
+  await page.locator('#catalogResults button').filter({ hasText: 'Cliente QA actualizado' }).click();
+  await fillCase(page, 'Caso con atajo');
+  failNextWrite = true; await page.keyboard.press('Control+s');
+  await page.locator('#formAlert').getByText('Prueba de perdida de conexion.').waitFor();
+  assert.equal(await page.locator('#caseTitle').inputValue(), 'Caso con atajo');
+  assert.equal(await page.locator('#caseModal').isVisible(), true);
+  await page.waitForFunction(() => document.getElementById('caseForm').dataset.saving !== 'true');
+  await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => document.getElementById('caseForm').dataset.saving !== 'true');
+  await page.locator('#caseModal').waitFor({ state: 'hidden' });
+  assert.equal(data.cases.filter(row => row.title === 'Caso con atajo').length, 1);
+  await page.locator('#casesTableBody tr').filter({ hasText: 'Caso con atajo' }).locator('[data-action="process"]').click();
+  await page.locator('#processUpdate').fill('Proceso guardado con Ctrl+S');
+  await page.locator('#processModal').click({ position: { x: 2, y: 2 } }); await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#processModal').isVisible(), true);
+  await page.keyboard.press('Control+s'); await page.locator('#processModal').waitFor({ state: 'hidden' });
+  assert.equal(data.cases.find(row => row.title === 'Caso con atajo').currentProcess, 'Proceso guardado con Ctrl+S');
+  await page.locator('#casesTableBody tr').filter({ hasText: 'Caso con atajo' }).locator('[data-action="edit"]').click();
+  await page.locator('#observations').fill('No perder esta nota durante un conflicto');
+  const concurrentCase = data.cases.find(row => row.title === 'Caso con atajo');
+  concurrentCase._version = 'changed-on-another-device';
+  await page.keyboard.press('Control+s');
+  await page.locator('#formAlert').filter({ hasText: 'cambio en otro equipo' }).waitFor();
+  assert.equal(await page.locator('#caseModal').isVisible(), true);
+  assert.equal(await page.locator('#observations').inputValue(), 'No perder esta nota durante un conflicto');
+  await page.locator('[data-close-modal]').first().click();
+  await page.locator('#caseModal').waitFor({ state: 'hidden' });
   assert.deepEqual(errors, []);
-  console.log('PASS: cuentas principales, roles, usuarios ocultos, claves propias, eliminacion en servidor, JSON y navegacion.');
+  console.log('PASS: catalogo, historicos, dictado, ventanas protegidas, Ctrl+S, reintentos y conflictos sin perder formularios.');
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+

@@ -1,5 +1,6 @@
 import { DataError, isAdmin, emptyData, visibleData, applyOperations } from './records.mjs';
 import { publicAccount as publicUser, accountRole, accountUsername, listAccounts, validateAccountChange } from './accounts.mjs';
+import { changeCatalog } from './catalog.mjs';
 
 const cleanUsername = value => typeof value === 'string' ? value.trim() : '';
 const usernameEmail = username => username.toLowerCase() + '@arissto.invalid';
@@ -181,10 +182,12 @@ export function createService({ getUser, admin, getStore }) {
       const allowedOwners = new Set(isAdmin(user) ? (await users()).map(item => item.id) : [user.id]);
       for (let attempt = 0; attempt < 5; attempt++) {
         const current = await store.getWithMetadata('records', { type: 'json' });
-        const next = applyOperations(current?.data || emptyData(), body.operations, user, allowedOwners, body.importing === true);
+        const catalogChange = ['catalog-create-cooperative', 'catalog-create-contact', 'catalog-update-contact'].includes(body.action)
+          ? changeCatalog(current?.data || emptyData(), body, user) : null;
+        const next = catalogChange?.next || applyOperations(current?.data || emptyData(), body.operations, user, allowedOwners, body.importing === true);
         if (new TextEncoder().encode(JSON.stringify(next)).length > 4500000) throw new DataError('El almacenamiento alcanzo el limite de esta version. Contacte al administrador.', 413);
         const result = await store.setJSON('records', next, current ? { onlyIfMatch: current.etag } : { onlyIfNew: true });
-        if (result.modified) return reply(visibleData(next, user));
+        if (result.modified) return reply({ ...visibleData(next, user), ...(catalogChange ? { created: catalogChange.created } : {}) });
       }
       return reply({ error: 'Hay cambios simultaneos. Intente guardar nuevamente.' }, 409);
     } catch (error) {
@@ -195,3 +198,4 @@ export function createService({ getUser, admin, getStore }) {
     }
   };
 }
+

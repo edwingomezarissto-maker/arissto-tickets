@@ -389,6 +389,7 @@
             <div>
               <h2 id="cooperativesTitle">Cooperativas</h2>
               <p id="cooperativeTotalLabel">0 cooperativas registradas</p>
+              <p>Catalogo comun de cooperativas, clientes y telefonos para todas las cuentas. Los administradores mantienen la informacion actualizada.</p>
             </div>
           </div>
 
@@ -396,11 +397,11 @@
             <aside class="cooperative-list-panel">
               <div class="database-form">
                 <h3>Lista de cooperativas</h3>
-                <p>Seleccione una cooperativa para editarla o agregar personas.</p>
+                <p data-catalog-admin hidden>Seleccione una cooperativa para editarla o agregar personas.</p>
 
                 <div class="alert" id="cooperativeAlert" role="alert"></div>
 
-                <form id="cooperativeForm" novalidate>
+                <form id="cooperativeForm" data-catalog-admin hidden novalidate>
                   <input type="hidden" id="cooperativeId" />
                   <label>
                     <span>Nombre de la cooperativa</span>
@@ -435,7 +436,7 @@
 
               <div class="alert" id="contactAlert" role="alert"></div>
 
-              <form id="contactForm" novalidate>
+              <form id="contactForm" data-catalog-admin hidden novalidate>
                 <input type="hidden" id="contactId" />
                 <fieldset id="contactFieldset" disabled>
                   <div class="contact-form-grid">
@@ -446,7 +447,7 @@
                     </label>
                     <label>
                       <span>Telefono</span>
-                      <input type="tel" id="contactPhone" data-label="Telefono" required />
+                      <input type="tel" id="contactPhone" data-label="Telefono" />
                       <small class="field-error"></small>
                     </label>
                     <label>
@@ -468,7 +469,7 @@
                       <th>Persona</th>
                       <th>Cargo</th>
                       <th>Telefono</th>
-                      <th>Acciones</th>
+                      <th data-catalog-admin hidden>Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="contactsTableBody"></tbody>
@@ -497,6 +498,7 @@
 
         <form id="caseForm" novalidate>
           <input type="hidden" id="caseId" />
+          <input type="hidden" id="caseVersion" />
           <div class="form-grid">
             <label>
               <span>Caso / Pendiente</span>
@@ -505,22 +507,22 @@
             </label>
             <label>
               <span>Cooperativa</span>
-              <input type="text" id="cooperative" data-label="Cooperativa" list="cooperativeOptions" required />
+              <input type="hidden" id="caseCooperativeId" /><input type="text" id="cooperative" data-label="Cooperativa" placeholder="Busque una cooperativa" readonly required /><span class="catalog-field-actions"><button type="button" class="secondary-button" id="searchCooperative">Buscar</button><button type="button" class="secondary-button" id="createCooperativeFromCase">Crear cooperativa</button></span>
               <small class="field-error"></small>
             </label>
             <label>
               <span>Persona que solicito soporte</span>
-              <input type="text" id="requester" data-label="Persona que solicito soporte" list="requesterOptions" required />
+              <input type="hidden" id="caseContactId" /><input type="text" id="requester" data-label="Persona que solicito soporte" placeholder="Seleccione un cliente de la cooperativa" readonly required /><span class="catalog-field-actions"><button type="button" class="secondary-button" id="searchRequester" disabled>Buscar cliente</button><button type="button" class="secondary-button" id="createRequesterFromCase" disabled>Crear cliente</button><button type="button" class="secondary-button" id="editRequesterFromCase" data-catalog-admin hidden disabled>Editar cliente</button></span>
               <small class="field-error"></small>
             </label>
             <label>
               <span>Telefono</span>
-              <input type="tel" id="requesterPhone" data-label="Telefono" required />
+              <input type="tel" id="requesterPhone" data-label="Telefono" readonly />
               <small class="field-error"></small>
             </label>
             <label>
               <span>Cargo (opcional)</span>
-              <input type="text" id="requesterPosition" data-label="Cargo" />
+              <input type="text" id="requesterPosition" data-label="Cargo" readonly />
             </label>
             <label>
               <span>Encargado</span>
@@ -690,5 +692,6 @@
     <script src="assets/account.js"></script>
   </body>
 </html>
+
 
 
