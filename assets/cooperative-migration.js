@@ -151,7 +151,8 @@
   }
 
   byId('exportCooperativesContacts').addEventListener('click', async event => {
-    event.currentTarget.disabled = true;
+    const button = event.currentTarget;
+    button.disabled = true;
     showStatus('Preparando respaldo de cooperativas y clientes...');
     try {
       const data = await api('/api/support');
@@ -176,18 +177,20 @@
     } catch (error) {
       showStatus(error.message || 'No se pudo exportar la información.', true);
     } finally {
-      event.currentTarget.disabled = false;
+      button.disabled = false;
     }
   });
 
   byId('importCooperativesContacts').addEventListener('click', async event => {
+    const button = event.currentTarget;
     const file = byId('importCooperativesFile').files?.[0];
     if (!file) {
       showStatus('Seleccione un archivo JSON de cooperativas y clientes.', true);
       return;
     }
 
-    event.currentTarget.disabled = true;
+    button.disabled = true;
+    showStatus('Leyendo e importando cooperativas y clientes...');
     try {
       let parsed;
       try { parsed = JSON.parse(await file.text()); }
@@ -225,7 +228,7 @@
     } catch (error) {
       showStatus(error.message || 'No se pudo importar la información.', true);
     } finally {
-      event.currentTarget.disabled = false;
+      button.disabled = false;
     }
   });
 })();

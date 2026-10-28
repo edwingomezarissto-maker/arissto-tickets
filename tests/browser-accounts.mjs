@@ -167,6 +167,58 @@ try {
   await page.getByText('Tarea desde otro equipo', { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.locator('[data-tab-target="migrationSection"]').click();
+  const upload = (selector, contents) => page.locator(selector).setInputFiles({
+    name: 'respaldo.json', mimeType: 'application/json', buffer: Buffer.from(contents),
+  });
+  page.on('dialog', dialog => dialog.accept());
+  await upload('#importFile', '{invalid');
+  await page.locator('#importCasesTasks').click();
+  await page.locator('#migrationAlert').getByText('El archivo no es un JSON valido.').waitFor();
+  assert.equal(await page.locator('#importCasesTasks').isEnabled(), true);
+  const backup = JSON.stringify({ tasks: [{ id: 'json-task', title: 'Tarea importada JSON', owner: 'Edwin Gomez' }],
+    cases: [{ id: 'json-case', title: 'Caso importado JSON', owner: 'Edwin Gomez' }] });
+  await upload('#importFile', backup);
+  failNextWrite = true;
+  await page.locator('#importCasesTasks').click();
+  await page.locator('#migrationAlert').getByText('No se pudo importar. Revise la conexion e intente nuevamente.').waitFor();
+  assert.equal(await page.locator('#importCasesTasks').isEnabled(), true);
+  assert.equal(data.tasks.some(task => task.id === 'json-task'), false);
+  await page.locator('#importCasesTasks').click();
+  await page.locator('#migrationStatus').filter({ hasText: 'Importacion completada.' }).waitFor();
+  assert.equal(data.tasks.filter(task => task.id === 'json-task').length, 1);
+  assert.equal(data.cases.filter(row => row.id === 'json-case').length, 1);
+  assert.equal(await page.locator('#importCasesTasks').isEnabled(), true);
+  await upload('#importCooperativesFile', '{invalid');
+  await page.locator('#importCooperativesContacts').click();
+  await page.locator('#migrationAlert').getByText('El archivo seleccionado no contiene JSON válido.').waitFor();
+  assert.equal(await page.locator('#importCooperativesContacts').isEnabled(), true,
+    'invalid JSON must release the button so the user can retry');
+  const cooperatives = JSON.stringify({ cooperatives: [{ name: 'Cooperativa QA', contacts: [{ name: 'Cliente QA' }] }] });
+  await upload('#importCooperativesFile', cooperatives);
+  failNextWrite = true;
+  await page.locator('#importCooperativesContacts').click();
+  await page.locator('#migrationAlert').getByText('Prueba de perdida de conexion.').waitFor();
+  assert.equal(await page.locator('#importCooperativesContacts').isEnabled(), true);
+  await page.locator('#importCooperativesContacts').click();
+  await page.locator('#migrationStatus').filter({ hasText: 'Importación completada.' }).waitFor();
+  assert.equal(data.cooperatives.length, 1);
+  assert.equal(await page.locator('#importCooperativesContacts').isEnabled(), true);
+  await upload('#importCooperativesFile', cooperatives);
+  await page.locator('#importCooperativesContacts').click();
+  await page.locator('#migrationStatus').getByText('No se encontraron cooperativas o clientes nuevos para importar.').waitFor();
+  assert.equal(data.cooperatives.length, 1);
+  assert.equal(await page.locator('#importCooperativesContacts').isEnabled(), true);
+  const download = page.waitForEvent('download');
+  await page.locator('#exportCooperativesContacts').click();
+  await download;
+  await page.locator('#migrationStatus').filter({ hasText: 'Respaldo generado:' }).waitFor();
+  assert.equal(await page.locator('#exportCooperativesContacts').isEnabled(), true);
+  for (const section of ['graphicDashboardSection', 'tasksSection', 'casesSection', 'migrationSection']) {
+    await page.locator(`[data-tab-target="${section}"]`).click();
+    assert.equal(await page.locator('#' + section).isVisible(), true);
+  }
   assert.deepEqual(errors, []);
-  console.log('PASS: ingreso, usuarios, cambio de clave, asignacion, aislamiento, reintento, recarga, cierre y responsive.');
+  console.log('PASS: cuentas, guardado, JSON invalido, importacion, reintento, duplicados, exportacion y navegacion.');
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

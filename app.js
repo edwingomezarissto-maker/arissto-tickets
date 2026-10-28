@@ -639,12 +639,26 @@ function exportCasesAndTasks() {
 }
 
 async function importCasesAndTasks() {
+  const button = elements.importCasesTasks;
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    await importSelectedCasesAndTasks();
+  } catch {
+    showMigrationError("No se pudo importar el archivo. Revise su contenido e intente nuevamente.");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function importSelectedCasesAndTasks() {
   clearMigrationMessage();
   const file = elements.importFile.files?.[0];
   if (!file) {
     showMigrationError("Seleccione un archivo JSON para importar.");
     return;
   }
+  showMigrationStatus("Leyendo e importando casos y tareas...");
 
   let parsed;
   try {
