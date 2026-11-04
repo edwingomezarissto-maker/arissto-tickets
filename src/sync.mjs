@@ -1,8 +1,9 @@
-export const emptySnapshot = () => ({ cases: [], tasks: [], cooperatives: [] });
+export const emptySnapshot = () => ({ cases: [], tasks: [], cooperatives: [], services: [], projects: [], timeEntries: [], implementations: [], implementationPeople: [] });
 
 export function makeOperations(before, after) {
   const operations = [];
-  for (const collection of ['cases', 'tasks', 'cooperatives']) {
+  for (const collection of ['cases', 'tasks', 'cooperatives', 'services']) {
+    if (!Array.isArray(after[collection])) continue;
     const oldRows = new Map(before[collection].map(row => [row.id, row]));
     const newRows = new Map(after[collection].map(row => [row.id, row]));
     for (const [id, row] of newRows) {

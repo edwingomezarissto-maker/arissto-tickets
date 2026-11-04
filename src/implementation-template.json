@@ -1,0 +1,297 @@
+[
+  {
+    "name": "Planeación del proyecto",
+    "activities": [
+      {
+        "code": "1.1",
+        "title": "Preparativos para la reunión de inicio del proyecto (Kickoff)",
+        "weight": 1
+      },
+      {
+        "code": "1.2",
+        "title": "Reunión de inicio del proyecto (Kickoff)",
+        "weight": 1
+      },
+      {
+        "code": "1.3",
+        "title": "Presentación y validación de la propuesta metodológica",
+        "weight": 1
+      },
+      {
+        "code": "1.4",
+        "title": "Definición de la estructura organizativa del proyecto (equipos y roles)",
+        "weight": 1
+      },
+      {
+        "code": "1.5",
+        "title": "Definición de los recursos necesarios para el proyecto",
+        "weight": 1
+      },
+      {
+        "code": "1.6",
+        "title": "Elaboración del plan general de trabajo de todas las fases",
+        "weight": 2
+      },
+      {
+        "code": "1.7",
+        "title": "Elaboración del acta de constitución del proyecto",
+        "weight": 1
+      },
+      {
+        "code": "1.8",
+        "title": "Creación del repositorio para la documentación del proyecto",
+        "weight": 1
+      },
+      {
+        "code": "1.9",
+        "title": "Elaboración del documento del plan del proyecto",
+        "weight": 2
+      },
+      {
+        "code": "1.10",
+        "title": "Envío del plan del proyecto y del acta de constitución",
+        "weight": 1
+      },
+      {
+        "code": "1.11",
+        "title": "Revisión, retroalimentación y ajustes al plan y al acta",
+        "weight": 1
+      },
+      {
+        "code": "1.12",
+        "title": "Firma del acta de aceptación del plan del proyecto",
+        "weight": 1
+      }
+    ]
+  },
+  {
+    "name": "Análisis y levantamiento de información",
+    "activities": [
+      {
+        "code": "2.1",
+        "title": "Recopilación y análisis de requisitos y reglas de negocio",
+        "weight": 4
+      },
+      {
+        "code": "2.2",
+        "title": "Análisis de los módulos financieros (ahorros, préstamos, aportaciones)",
+        "weight": 3
+      },
+      {
+        "code": "2.3",
+        "title": "Análisis de los módulos contables",
+        "weight": 2
+      },
+      {
+        "code": "2.4",
+        "title": "Análisis de los formatos y documentos a implementar (contratos, recibos, reportes)",
+        "weight": 2
+      },
+      {
+        "code": "2.5",
+        "title": "Elaboración del documento de especificaciones",
+        "weight": 5
+      },
+      {
+        "code": "2.6",
+        "title": "Envío del documento de especificaciones",
+        "weight": 1
+      },
+      {
+        "code": "2.7",
+        "title": "Revisión, retroalimentación y ajustes al documento de especificaciones",
+        "weight": 1
+      },
+      {
+        "code": "2.8",
+        "title": "Firma del acta de aceptación del documento de especificaciones",
+        "weight": 1
+      }
+    ]
+  },
+  {
+    "name": "Adaptación del sistema y pruebas internas",
+    "activities": [
+      {
+        "code": "3.1",
+        "title": "Adaptación de las reglas de negocio en los módulos del sistema",
+        "weight": 5
+      },
+      {
+        "code": "3.2",
+        "title": "Configuración de formatos legales y documentos impresos",
+        "weight": 3
+      },
+      {
+        "code": "3.3",
+        "title": "Desarrollo de nuevas funcionalidades requeridas por la cooperativa",
+        "weight": 3
+      },
+      {
+        "code": "3.4",
+        "title": "Parametrización del catálogo contable",
+        "weight": 2
+      },
+      {
+        "code": "3.5",
+        "title": "Entrega y revisión de las plantillas para la migración de datos",
+        "weight": 5
+      },
+      {
+        "code": "3.6",
+        "title": "Migración de datos – Primera prueba y verificación de saldos",
+        "weight": 1
+      },
+      {
+        "code": "3.7",
+        "title": "Configuración de perfiles o roles de usuarios",
+        "weight": 1
+      },
+      {
+        "code": "3.8",
+        "title": "Creación de usuarios y asignación de permisos",
+        "weight": 4
+      },
+      {
+        "code": "3.9",
+        "title": "Pruebas por módulo del sistema",
+        "weight": 3
+      },
+      {
+        "code": "3.10",
+        "title": "Pruebas integrales (procesos completos de inicio a fin)",
+        "weight": 2
+      },
+      {
+        "code": "3.11",
+        "title": "Simulación de operaciones según el documento de especificaciones",
+        "weight": 1
+      },
+      {
+        "code": "3.12",
+        "title": "Firma del acta de aceptación del sistema adaptado y configurado",
+        "weight": 1
+      }
+    ]
+  },
+  {
+    "name": "Preparación para la salida en vivo",
+    "activities": [
+      {
+        "code": "4.1",
+        "title": "Migración de datos – Segunda prueba y verificación de saldos",
+        "weight": 3
+      },
+      {
+        "code": "4.2",
+        "title": "Definición del plan de capacitación de usuarios",
+        "weight": 1
+      },
+      {
+        "code": "4.3",
+        "title": "Definición de las funciones del administrador del sistema",
+        "weight": 1
+      },
+      {
+        "code": "4.4",
+        "title": "Instalación y configuración del ambiente de producción",
+        "weight": 2
+      },
+      {
+        "code": "4.5",
+        "title": "Capacitación a usuarios finales",
+        "weight": 5
+      },
+      {
+        "code": "4.6",
+        "title": "Evaluación y refuerzo de lo aprendido",
+        "weight": 2
+      },
+      {
+        "code": "4.7",
+        "title": "Capacitación al administrador del sistema",
+        "weight": 2
+      },
+      {
+        "code": "4.8",
+        "title": "Firma del acta con los resultados de la capacitación",
+        "weight": 1
+      },
+      {
+        "code": "4.9",
+        "title": "Definición de la metodología del plan piloto",
+        "weight": 1
+      }
+    ]
+  },
+  {
+    "name": "Prueba piloto",
+    "activities": [
+      {
+        "code": "5.1",
+        "title": "Migración de datos – Tercera prueba y verificación de saldos",
+        "weight": 3
+      },
+      {
+        "code": "5.2",
+        "title": "Pruebas de factura electrónica",
+        "weight": 2
+      },
+      {
+        "code": "5.3",
+        "title": "Validación del ambiente de producción (servidor, equipos, redes, impresoras)",
+        "weight": 3
+      },
+      {
+        "code": "5.4",
+        "title": "Validación del funcionamiento del sistema (reglas de negocio, formatos, tiempos de respuesta)",
+        "weight": 3
+      },
+      {
+        "code": "5.5",
+        "title": "Validación del dominio del sistema por parte de los usuarios",
+        "weight": 3
+      },
+      {
+        "code": "5.6",
+        "title": "Validación de los datos migrados, saldos iniciales y cálculos",
+        "weight": 2
+      },
+      {
+        "code": "5.7",
+        "title": "Firma del acta de aceptación previa a la salida en vivo",
+        "weight": 1
+      }
+    ]
+  },
+  {
+    "name": "Salida en vivo y acompañamiento",
+    "activities": [
+      {
+        "code": "6.1",
+        "title": "Migración final de datos",
+        "weight": 1
+      },
+      {
+        "code": "6.2",
+        "title": "Puesta en marcha de la infraestructura tecnológica",
+        "weight": 1
+      },
+      {
+        "code": "6.3",
+        "title": "Salida en vivo del sistema",
+        "weight": 1
+      },
+      {
+        "code": "6.4",
+        "title": "Acompañamiento y atención de incidencias durante las primeras semanas",
+        "weight": 6
+      },
+      {
+        "code": "6.5",
+        "title": "Firma del acta de cierre del periodo de implementacion",
+        "weight": 1
+      }
+    ]
+  }
+]

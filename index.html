@@ -65,11 +65,20 @@
         <button class="secondary-button" id="logoutButton" type="button" hidden>Cerrar sesion</button>
       </div>
 
+      <section class="time-banner" id="timerBanner" hidden aria-live="polite">
+        <div><strong id="timerTitle">Sin cronometro activo</strong><span id="timerProject"></span></div>
+        <time id="timerClock">00:00:00</time>
+        <div class="time-banner-actions"><button class="secondary-button" id="pauseTimer" type="button">Pausar</button><button class="primary-button" id="stopTimer" type="button">Detener</button></div>
+      </section>
+
       <nav class="app-tabs" aria-label="Navegacion principal">
         <button class="tab-button active" type="button" data-tab-target="dashboardSection">Dashboard</button>
         <button class="tab-button" type="button" data-tab-target="graphicDashboardSection">Dashboard gráfico</button>
         <button class="tab-button" type="button" data-tab-target="casesSection">Casos de soporte</button>
         <button class="tab-button" type="button" data-tab-target="tasksSection">Tareas</button>
+        <button class="tab-button" type="button" data-tab-target="timeProjectsSection">Tiempo y proyectos</button>
+        <button class="tab-button" type="button" data-tab-target="implementationsSection">Implementaciones</button>
+        <button class="tab-button" type="button" data-tab-target="servicesSection" data-access="services">Facturación</button>
         <button class="tab-button" type="button" data-tab-target="cooperativesSection">Cooperativas</button>
         <button class="tab-button" type="button" data-tab-target="migrationSection">Migracion</button>
         <button class="tab-button" id="usersTab" type="button" data-tab-target="usersSection" hidden>Usuarios</button>
@@ -78,14 +87,21 @@
       <main>
         <section class="section-block tab-panel" id="usersSection" aria-labelledby="usersTitle">
           <div class="section-heading"><h2 id="usersTitle">Usuarios</h2><button class="secondary-button" id="refreshUsers" type="button">Actualizar usuarios</button></div>
-          <p>Estas cuentas se guardan en el servidor. Los usuarios comunes ven sus casos y tareas; los administradores gestionan todas las cuentas. EGOMEZ y ADMIN son administradores principales.</p>
+          <p>Asigne a cada usuario solo las secciones que necesita. EGOMEZ y ADMIN son administradores principales y conservan acceso completo.</p>
           <p id="usersMessage" role="status"></p>
           <form id="userForm" class="user-form">
             <input type="hidden" id="editUserId" />
             <label>Nombre<input type="text" id="userName" maxlength="150" autocomplete="off" required /></label>
             <label>Usuario<input type="text" id="userUsername" pattern="[A-Za-z0-9._-]{3,40}" autocomplete="off" required /></label>
             <label><span id="userPasswordLabel">Contrasena inicial (minimo 3 caracteres)</span><input type="password" id="userPassword" autocomplete="new-password" minlength="3" maxlength="128" required /></label>
-            <label>Acceso<select id="userRole"><option value="member">Usuario comun</option><option value="admin">Administrador</option></select></label>
+            <label>Rol<select id="userRole"><option value="member">Usuario comun</option><option value="admin">Administrador</option></select></label>
+            <fieldset class="user-permissions"><legend>Secciones permitidas</legend>
+              <label><input type="checkbox" name="userPermission" value="cases" checked /> Casos</label>
+              <label><input type="checkbox" name="userPermission" value="tasks" checked /> Tareas</label>
+              <label><input type="checkbox" name="userPermission" value="services" /> Facturación y servicios</label>
+              <label><input type="checkbox" name="userPermission" value="time" /> Tiempo y proyectos</label>
+              <label><input type="checkbox" name="userPermission" value="implementations" /> Implementaciones</label>
+            </fieldset>
             <div class="section-actions">
               <button class="primary-button" id="saveUserButton" type="submit">Crear usuario</button>
               <button class="secondary-button" id="cancelUserEdit" type="button" hidden>Cancelar</button>
@@ -299,6 +315,7 @@
                   <th>Cooperativa</th>
                   <th>Solicitante</th>
                   <th>Telefono</th>
+                  <th>Proyecto</th>
                   <th>Encargado</th>
                   <th>Estado</th>
                   <th>Prioridad</th>
@@ -333,6 +350,7 @@
                   <th>Qué se ha hecho</th>
                   <th>Detalles adicionales</th>
                   <th>Fecha de creación</th>
+                  <th>Proyecto</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
@@ -344,7 +362,89 @@
           </div>
         </section>
 
+        <section class="section-block tab-panel" id="implementationsSection" aria-labelledby="implementationsTitle">
+          <div class="section-heading"><div><h2 id="implementationsTitle">Implementaciones</h2><p>Proyectos compartidos con el equipo autorizado. Control de fases, actividades y tiempo dedicado.</p></div><button type="button" class="primary-button" id="newImplementation">Nueva implementación</button></div>
+          <p id="implementationMessage" role="status"></p>
+          <form id="implementationForm" class="implementation-form" hidden>
+            <h3 class="implementation-wide">Crear desde la plantilla de seis fases y 53 actividades</h3>
+            <label>Cooperativa<select id="implementationCooperative" required></select></label>
+            <label>Nombre del proyecto<input id="implementationName" maxlength="120" required /></label>
+            <label>Fecha de inicio<input type="date" id="implementationStart" required /></label>
+            <label>Líder de ARISSTO<input id="implementationLeader" maxlength="300" /></label>
+            <label>Líder de la cooperativa<input id="implementationCoopLeader" maxlength="300" /></label>
+            <label>Equipo autorizado<select id="implementationTeam" multiple size="4"></select></label>
+            <p class="implementation-wide">El creador y los administradores conservan acceso. Las fechas iniciales se distribuyen de lunes a viernes, sin feriados; puedes ajustarlas en cada actividad.</p>
+            <div class="section-actions implementation-wide"><button class="primary-button" type="submit">Crear proyecto</button><button class="secondary-button" type="button" id="cancelImplementation">Cancelar</button></div>
+          </form>
+          <label>Proyecto<select id="implementationSelect"><option value="">Seleccione una implementación</option></select></label>
+          <div id="implementationDetail" hidden>
+            <p id="implementationOverview"></p>
+            <form id="implementationTeamForm" class="implementation-form" hidden>
+              <label>Líder de ARISSTO<input id="implementationEditLeader" maxlength="300" /></label><label>Líder de la cooperativa<input id="implementationEditCoopLeader" maxlength="300" /></label><label>Equipo autorizado<select id="implementationEditTeam" multiple size="4"></select></label>
+              <button type="submit" class="secondary-button">Guardar líderes y equipo</button>
+            </form>
+            <div class="implementation-filters"><label>Mostrar<select id="implementationFilter"><option value="all">Todas las actividades</option><option value="mine">Mis actividades</option><option value="today">Pendientes de hoy</option><option value="late">Atrasadas</option><option value="blocked">Bloqueadas</option><option value="completed">Completadas</option></select></label><button class="secondary-button" id="implementationAddActivity" type="button">Añadir actividad</button></div>
+            <form id="implementationActivityForm" class="implementation-form" hidden>
+              <h3 class="implementation-wide" id="implementationActivityHeading">Actividad</h3>
+              <input type="hidden" id="implementationActivityId" /><input type="hidden" id="implementationActivityVersion" />
+              <label class="implementation-wide">Actividad<input id="implementationActivityTitle" maxlength="500" required /></label>
+              <label>Fase<select id="implementationActivityPhase" required></select></label><label>Responsable<select id="implementationActivityAssignee"></select></label>
+              <label>Estado<select id="implementationActivityStatus"><option>No iniciado</option><option>En proceso</option><option>En pausa</option><option>Bloqueado</option><option>Completado</option></select></label>
+              <label>Inicio planificado<input type="date" id="implementationActivityPlannedStart" required /></label><label>Fin planificado<input type="date" id="implementationActivityPlannedEnd" required /></label><label>Peso planificado (días de referencia)<input type="number" id="implementationActivityWeight" min="0.1" max="1000" step="0.1" required /></label>
+              <label>Inicio real<input type="date" id="implementationActivityActualStart" /></label><label>Fin real<input type="date" id="implementationActivityActualEnd" /></label><label>Avance (%)<input type="number" id="implementationActivityProgress" min="0" max="100" step="1" required /></label>
+              <label>Motivo del bloqueo<input id="implementationActivityBlockedReason" maxlength="1000" /></label><label>Quién debe responder<input id="implementationActivityWaitingOn" maxlength="300" placeholder="ARISSTO, cooperativa o persona" /></label><label>Enlace al documento o acta<input type="url" id="implementationActivityDocumentUrl" maxlength="2000" /></label>
+              <label class="implementation-wide">Seguimiento y observaciones<textarea id="implementationActivityNotes" maxlength="5000" rows="3" spellcheck="true" lang="es"></textarea></label>
+              <div id="implementationActivityHistory" class="implementation-wide"></div>
+              <div class="section-actions implementation-wide"><button type="submit" class="primary-button">Guardar actividad</button><button type="button" class="secondary-button" id="cancelImplementationActivity">Cancelar</button></div>
+            </form>
+            <div id="implementationPhases"></div>
+          </div>
+        </section>
+        <section class="section-block tab-panel" id="timeProjectsSection" aria-labelledby="timeProjectsTitle">
+          <div class="section-heading"><div><h2 id="timeProjectsTitle">Tiempo y proyectos</h2><p>Registra el tiempo que dedicas a cada proyecto y revisa el porcentaje del período.</p></div></div>
+          <div class="time-report-filters">
+            <label><span>Desde</span><input type="date" id="timeRangeStart" /></label>
+            <label><span>Hasta</span><input type="date" id="timeRangeEnd" /></label>
+            <button class="secondary-button" id="timeThisWeek" type="button">Esta semana</button>
+            <button class="secondary-button" id="timeThisMonth" type="button">Este mes</button>
+          </div>
+          <p class="time-report-note">Los porcentajes se calculan sobre el total de horas registradas en el período. El tiempo pausado no cuenta.</p>
+          <div class="table-wrap"><table><thead><tr><th>Proyecto</th><th>Tiempo</th><th>Porcentaje del total</th><th></th></tr></thead><tbody id="projectTotalsBody"></tbody></table><div class="empty-state" id="timeEmptyState">Aún no hay tiempo registrado para este período.</div></div>
+          <article class="project-create-card">
+            <h3>Crear proyecto</h3>
+            <p>“Arissto Financiero” ya está disponible. Puedes añadir proyectos para las cooperativas.</p>
+            <form id="projectForm" class="project-create-form">
+              <label><span>Nombre del proyecto</span><input type="text" id="newProjectName" maxlength="120" placeholder="Ej.: Proyecto CREDESAL" required /></label>
+              <label><span>Cooperativa (opcional)</span><select id="newProjectCooperative"><option value="">Sin cooperativa asociada</option></select></label>
+              <button class="primary-button" type="submit">Crear proyecto</button>
+            </form>
+            <p id="projectMessage" role="status"></p>
+          </article>
+          <h3>Proyectos disponibles</h3>
+          <div class="table-wrap"><table><thead><tr><th>Proyecto</th><th>Cooperativa</th><th>Tiempo en el período</th><th>Acción</th></tr></thead><tbody id="projectsBody"></tbody></table></div>
+          <h3>Sesiones de tiempo del período</h3>
+          <div class="table-wrap"><table><thead><tr><th>Actividad</th><th>Proyecto</th><th>Inicio</th><th>Duración</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="timeEntriesBody"></tbody></table></div>
+        </section>
 
+
+        <section class="section-block tab-panel" id="servicesSection" aria-labelledby="servicesTitle">
+          <div class="section-heading"><div><h2 id="servicesTitle">Facturación y servicios</h2><p>Los servicios registrados son compartidos con todas las cuentas que tienen acceso a Facturación. Marque cuándo ya se generó la factura.</p></div></div>
+          <form id="serviceForm" class="service-form">
+            <input type="hidden" id="serviceId" />
+            <label>Fecha<input type="date" id="serviceDate" required /></label>
+            <label>Cooperativa<select id="serviceCooperative" required><option value="">Seleccione</option></select></label>
+            <label>Persona<input type="text" id="servicePerson" maxlength="200" required /></label>
+            <label>Servicio brindado<input type="text" id="serviceDescription" maxlength="500" required /></label>
+            <label>Cantidad<input type="number" id="serviceQuantity" min="0.01" step="0.01" value="1" required /></label>
+            <label>Precio unitario<input type="number" id="serviceUnitPrice" min="0" step="0.01" required /></label>
+            <label class="service-wide">Observaciones<input type="text" id="serviceNotes" maxlength="1000" /></label>
+            <div class="section-actions"><button class="primary-button" type="submit" id="saveServiceButton">Guardar servicio</button><button class="secondary-button" type="button" id="cancelServiceEdit" hidden>Cancelar</button></div>
+          </form>
+          <div class="service-report-filters"><label>Desde<input type="date" id="serviceFrom" /></label><label>Hasta<input type="date" id="serviceTo" /></label><label>Cooperativa<select id="serviceFilterCooperative"><option value="">Todas</option></select></label><label>Estado de factura<select id="serviceInvoiceFilter"><option value="all">Todas</option><option value="pending">Pendientes</option><option value="invoiced">Facturadas</option></select></label><button class="secondary-button" type="button" id="printServiceSummary">Imprimir resumen</button></div>
+          <p id="serviceSummaryTotal" class="service-total"></p><p id="serviceMessage" role="status"></p>
+          <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Cooperativa</th><th>Persona</th><th>Servicio</th><th>Cantidad</th><th>Precio unitario</th><th>Total</th><th>Factura</th><th>Acciones</th></tr></thead><tbody id="servicesBody"></tbody></table><div class="empty-state" id="servicesEmpty">No hay servicios registrados para estos filtros.</div></div>
+          <p class="service-disclaimer">El resumen es informativo para preparar la facturación en administración; no genera una factura fiscal.</p>
+        </section>
         <section class="section-block tab-panel" id="migrationSection" aria-labelledby="migrationTitle">
           <div class="section-heading">
             <div>
@@ -529,6 +629,10 @@
               <input type="text" id="owner" data-label="Encargado" required />
               <small class="field-error"></small>
             </label>
+            <label>
+              <span>Proyecto</span>
+              <select id="caseProjectId" data-label="Proyecto" required><option value="project-arissto-financiero">Arissto Financiero</option></select>
+            </label>
             <label id="caseAccountLabel" hidden>
               <span>Cuenta asignada</span>
               <select id="caseAccount"></select>
@@ -667,6 +771,10 @@
             <select id="taskAccount"></select>
           </label>
           <label>
+            <span>Proyecto</span>
+            <select id="taskProjectId" data-label="Proyecto" required><option value="project-arissto-financiero">Arissto Financiero</option></select>
+          </label>
+          <label>
             <span>Qué se ha hecho</span>
             <textarea id="taskProgress" rows="4"></textarea>
           </label>
@@ -692,6 +800,5 @@
     <script src="assets/account.js"></script>
   </body>
 </html>
-
 
 

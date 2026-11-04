@@ -48,6 +48,8 @@ function lock(text) {
   $('passwordForm').reset();
   window.ARISSTO_APP.setCatalogAccess(false);
   window.ARISSTO_APP.clear();
+  window.ARISSTO_SERVICES?.receive(emptySnapshot(), null);
+  window.ARISSTO_IMPLEMENTATIONS?.receive(emptySnapshot(), null);
   showLogin(text);
 }
 
@@ -67,15 +69,17 @@ async function api(path, body) {
 }
 
 function dataSignature(data) {
-  return JSON.stringify(['cases', 'tasks', 'cooperatives'].map(key => data[key] || []));
+  return JSON.stringify(['cases', 'tasks', 'cooperatives', 'services', 'projects', 'timeEntries', 'implementations', 'implementationPeople'].map(key => data[key] || []));
 }
 
 function receive(data, force = false) {
   const nextSignature = dataSignature(data);
   if (!force && nextSignature === snapshotSignature) return false;
-  snapshot = Object.fromEntries(['cases', 'tasks', 'cooperatives'].map(key => [key, structuredClone(data[key] || [])]));
+  snapshot = Object.fromEntries(['cases', 'tasks', 'cooperatives', 'services', 'projects', 'timeEntries', 'implementations', 'implementationPeople'].map(key => [key, structuredClone(data[key] || (key === 'implementationPeople' ? snapshot.implementationPeople : []) || [])]));
   snapshotSignature = nextSignature;
   window.ARISSTO_APP.receive(snapshot);
+  window.ARISSTO_SERVICES?.receive(snapshot, user);
+  window.ARISSTO_IMPLEMENTATIONS?.receive(snapshot, user);
   return true;
 }
 
@@ -86,7 +90,7 @@ function drawUsers() {
   for (const account of users) {
     const tr = document.createElement('tr');
     tr.dataset.userId = account.id;
-    const access = account.roles.includes('admin') ? 'Administrador' : account.roles.includes('member') ? 'Usuario comun' : 'Sin acceso';
+    const access = account.roles.includes('admin') ? 'Administrador' : account.roles.includes('member') ? 'Usuario comun · ' + ((account.permissions || []).map(permissionName).join(', ') || 'Sin secciones') : 'Sin acceso';
     for (const value of [account.name, account.username, access]) {
       const td = document.createElement('td'); td.textContent = value; tr.append(td);
     }
@@ -98,6 +102,7 @@ function drawUsers() {
       $('userUsername').value = account.username; $('userUsername').readOnly = account.primaryAdmin === true;
       $('userRole').value = account.roles.includes('admin') ? 'admin' : 'member';
       $('userRole').disabled = account.primaryAdmin === true;
+      document.querySelectorAll('[name="userPermission"]').forEach(input => { input.checked = (account.permissions || []).includes(input.value); input.disabled = account.roles.includes('admin'); });
       $('userPassword').value = ''; $('userPassword').required = false;
       $('userPasswordLabel').textContent = 'Nueva contrasena (opcional, minimo 3 caracteres)';
       $('saveUserButton').textContent = 'Guardar cambios'; $('cancelUserEdit').hidden = false;
@@ -117,6 +122,20 @@ function drawUsers() {
 
 function updateAccess() {
   $('usersTab').hidden = !administrator();
+  const permissions = new Set(user?.permissions || ['cases', 'tasks', 'time']);
+  document.documentElement.classList.toggle('cases-access-disabled', !administrator() && !permissions.has('cases'));
+  document.documentElement.classList.toggle('tasks-access-disabled', !administrator() && !permissions.has('tasks'));
+  for (const [area, section] of [['cases', 'casesSection'], ['tasks', 'tasksSection'], ['time', 'timeProjectsSection'], ['services', 'servicesSection'], ['implementations', 'implementationsSection']]) {
+    const allowed = administrator() || permissions.has(area);
+    const tab = document.querySelector(`[data-tab-target="${section}"]`);
+    if (tab) tab.hidden = !allowed;
+    if (!allowed && document.querySelector(`#${section}.active`)) document.querySelector('[data-tab-target="dashboardSection"]').click();
+  }
+  document.querySelector('[data-tab-target="graphicDashboardSection"]').hidden = !administrator() && !permissions.has('cases') && !permissions.has('tasks');
+  document.querySelector('[data-tab-target="timeProjectsSection"]').hidden = !administrator() && !permissions.has('time');
+  $('serviceForm').hidden = !(administrator() || permissions.has('services'));
+  document.documentElement.classList.toggle('time-access-disabled', !administrator() && !permissions.has('time'));
+
   document.querySelector('[data-tab-target="cooperativesSection"]').hidden = false;
   window.ARISSTO_APP.setCatalogAccess(administrator());
   document.querySelectorAll('[data-catalog-admin]').forEach(element => { element.hidden = !administrator(); });
@@ -135,7 +154,7 @@ async function reloadAccounts() {
 }
 
 async function deleteAccount(account, button) {
-  if (!confirm(`¿Eliminar la cuenta ${account.name} (${account.username}) del servidor?\n\nLa persona perdera el acceso. Sus casos y tareas se conservaran y se transferiran a su cuenta administradora.`)) return;
+  if (!confirm(`¿Eliminar la cuenta ${account.name} (${account.username}) del servidor?\n\nLa persona perdera el acceso. Sus casos, tareas y tiempos registrados se conservaran y se transferiran a su cuenta administradora.`)) return;
   button.disabled = true;
   const currentEpoch = epoch;
   try {
@@ -241,6 +260,19 @@ async function commit(candidate) {
   } finally { saving = false; }
 }
 
+async function timeAction(body) {
+  if (!connected || saving) throw new Error('Espere a que termine la operacion actual y vuelva a intentar.');
+  const currentEpoch = epoch;
+  saving = true;
+  try {
+    const data = await api('/api/support', body);
+    if (epoch !== currentEpoch) throw new Error('La sesion cambio. Vuelva a ingresar.');
+    receive(data, true);
+    status(body.action === 'project-create' ? 'Proyecto compartido guardado.' : 'Tiempo sincronizado.');
+    return data;
+  } finally { saving = false; }
+}
+
 function prepareAssignment(kind, row) {
   if (local || !user) return;
   const select = $(kind + 'Account');
@@ -330,7 +362,8 @@ $('userForm').addEventListener('submit', async event => {
   try {
     const editing = Boolean($('editUserId').value);
     await api('/api/users', { id: $('editUserId').value, name: $('userName').value, username: $('userUsername').value,
-      password: $('userPassword').value, role: $('userRole').value });
+      password: $('userPassword').value, role: $('userRole').value,
+      permissions: [...document.querySelectorAll('[name="userPermission"]:checked')].map(input => input.value) });
     if (epoch !== currentEpoch) return;
     resetUserForm();
     await reloadAccounts();
@@ -347,9 +380,15 @@ function resetUserForm() {
   $('userRole').value = 'member'; $('userRole').disabled = false;
   $('userPassword').required = true; $('userPasswordLabel').textContent = 'Contrasena inicial (minimo 3 caracteres)';
   $('saveUserButton').textContent = 'Crear usuario'; $('cancelUserEdit').hidden = true;
+  document.querySelectorAll('[name="userPermission"]').forEach(input => { input.disabled = false; input.checked = ['cases', 'tasks'].includes(input.value); });
 }
+function permissionName(permission) { return ({ cases: 'Casos', tasks: 'Tareas', services: 'Facturación', time: 'Tiempo y proyectos', implementations: 'Implementaciones' })[permission] || permission; }
 
 $('cancelUserEdit').addEventListener('click', resetUserForm);
+$('userRole').addEventListener('change', () => {
+  const adminRole = $('userRole').value === 'admin';
+  document.querySelectorAll('[name="userPermission"]').forEach(input => { input.disabled = adminRole || $('userRole').disabled; if (adminRole) input.checked = true; });
+});
 $('logoutButton').addEventListener('click', async () => {
   lock('Cerrando sesion...');
   try { await logout(); message('Sesion cerrada.'); }
@@ -378,6 +417,7 @@ window.addEventListener('online', refresh);
 setInterval(() => { if (!document.hidden) refresh(); }, 60000);
 
 window.ARISSTO_CLOUD = { start, commit, prepareAssignment,
+  projectAction: body => timeAction(body), timerAction: body => timeAction(body),
   async changeCatalog(body) {
     if (!connected || saving) throw new Error('Espere a que termine la operacion actual y vuelva a intentar.');
     const currentEpoch = epoch;
@@ -398,4 +438,34 @@ window.ARISSTO_CLOUD = { start, commit, prepareAssignment,
   },
   canManageCatalog: () => local || administrator(),
   assignedAccount: kind => local || !user ? '' : administrator() ? $(kind + 'Account').value : user.id };
+window.ARISSTO_CLOUD.commitServices = async candidate => {
+  if (!connected || saving) throw new Error('Espere a que termine la operacion actual y vuelva a intentar.');
+  const currentEpoch = epoch;
+  const operations = makeOperations(snapshot, { ...snapshot, services: candidate });
+  if (!operations.length) return true;
+  saving = true;
+  try {
+    const data = await api('/api/support', { operations });
+    if (epoch !== currentEpoch) throw new Error('La sesion cambio. Vuelva a ingresar.');
+    receive(data, true); status('Servicios guardados.'); return true;
+  } finally { saving = false; }
+};
+window.ARISSTO_CLOUD.serviceInvoiceAction = async (id, invoiceStatus) => {
+  if (!connected || saving) throw new Error('Espere a que termine la operacion actual y vuelva a intentar.');
+  const currentEpoch = epoch; saving = true;
+  try {
+    const data = await api('/api/support', { action: 'service-invoice-status', id, status: invoiceStatus });
+    if (epoch !== currentEpoch) throw new Error('La sesion cambio. Vuelva a ingresar.');
+    receive(data, true); status('Estado de factura actualizado.'); return true;
+  } finally { saving = false; }
+};
 
+window.ARISSTO_CLOUD.implementationAction = async body => {
+  if (!connected || saving) throw new Error('Espere a que termine la operación actual.');
+  const currentEpoch = epoch; saving = true;
+  try {
+    const data = await api('/api/support', body);
+    if (epoch !== currentEpoch) throw new Error('La sesión cambió. Vuelva a ingresar.');
+    receive(data, true); status('Implementación guardada y sincronizada.'); return data;
+  } finally { saving = false; }
+};

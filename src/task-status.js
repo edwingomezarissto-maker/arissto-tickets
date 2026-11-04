@@ -169,6 +169,7 @@ async function saveTaskWithStatus(event) {
   const title = byId('taskTitle')?.value.trim();
   const owner = byId('taskOwner')?.value.trim();
   const status = byId('taskStatus')?.value || 'Pendiente';
+  const projectId = byId('taskProjectId')?.value || 'project-arissto-financiero';
   const alert = byId('taskAlert');
   if (!title || !owner || !TASK_STATUSES.includes(status)) {
     if (alert) { alert.textContent = 'Complete Tarea, Encargado y Estado.'; alert.classList.add('visible'); }
@@ -191,6 +192,7 @@ async function saveTaskWithStatus(event) {
       title,
       owner,
       status,
+      projectId,
       progress: entered.progress,
       details: entered.details,
       ownerId: entered.ownerId || previous?.ownerId || latest.user?.id || '',
@@ -236,4 +238,3 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshTaskStatusData();
 });
 window.addEventListener('focus', refreshTaskStatusData);
-

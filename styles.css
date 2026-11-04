@@ -64,6 +64,27 @@ html[data-theme="dark"] {
 .user-form button { justify-self: start; }
 #usersSection table { min-width: 640px; }
 #usersBody td:last-child { white-space: nowrap; }
+.user-permissions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px 24px; border: 1px solid var(--gray-300); border-radius: var(--radius); padding: 12px 16px; }
+.user-permissions label { display: flex; align-items: center; gap: 8px; }
+.service-form, .service-report-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 20px 0; }
+.service-form label, .service-report-filters label { display: grid; gap: 6px; }
+.service-wide { grid-column: 1 / -1; }
+.service-form .section-actions { grid-column: 1 / -1; }
+.service-total { font-size: 18px; font-weight: 700; }
+.service-disclaimer { color: var(--gray-700); font-size: 13px; }
+.time-access-disabled [data-time-start] { display: none !important; }
+.cases-access-disabled [id^="openCreateCase"], .tasks-access-disabled [id^="openCreateTask"] { display: none !important; }
+.implementation-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 20px; margin: 20px 0; border: 1px solid var(--gray-300); border-radius: var(--radius); background: var(--white); }
+.implementation-form label, .implementation-filters label { display: grid; gap: 6px; }
+.implementation-wide { grid-column: 1 / -1; }
+.implementation-filters { display: flex; gap: 16px; align-items: end; margin: 20px 0; flex-wrap: wrap; }
+.implementation-phase { margin: 24px 0; }
+.implementation-phase table { min-width: 1150px; }
+#implementationActivityHistory { max-height: 180px; overflow: auto; font-size: 13px; }
+#implementationOverview { padding: 16px; background: var(--blue-100); border-radius: var(--radius); }
+@media(max-width: 740px) { .implementation-form { grid-template-columns: 1fr; padding: 12px; } }
+#servicesSection table { min-width: 900px; }
+@media (max-width: 740px) { .service-form, .service-report-filters { grid-template-columns: 1fr; } .service-wide, .service-form .section-actions, .user-permissions { grid-column: 1; } }
 @media (max-width: 640px) {
   .user-form { grid-template-columns: minmax(0, 1fr); }
   .access-panel { padding: 20px; }
@@ -1153,4 +1174,29 @@ html[data-theme="dark"] .modal-backdrop {
   }
 }
 
-
+/* Time tracking and project allocation */
+.time-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: .75rem 0;
+  padding: .9rem 1rem;
+  border: 1px solid var(--blue-300, #8db9e8);
+  border-radius: 12px;
+  background: var(--blue-50, #eef6ff);
+}
+.time-banner > div:first-child { display: grid; gap: .15rem; }
+.time-banner > div:first-child span { color: var(--gray-700, #4d5a6c); font-size: .9rem; }
+.time-banner time { font-variant-numeric: tabular-nums; font-size: 1.25rem; font-weight: 800; }
+.time-banner-actions { display: flex; gap: .5rem; }
+.time-report-filters, .project-create-form { display: flex; align-items: end; flex-wrap: wrap; gap: .8rem; margin: 1rem 0; }
+.time-report-filters label, .project-create-form label { flex: 1 1 180px; }
+.time-report-note { color: var(--gray-700, #4d5a6c); }
+.project-create-card { margin: 1.5rem 0; padding: 1.25rem; border: 1px solid var(--gray-200, #e8edf3); border-radius: 12px; background: var(--white, #fff); }
+.project-create-card h3 { margin-top: 0; }
+.time-report-filters input, .project-create-form input, .project-create-form select { min-height: 44px; }
+@media (max-width: 680px) {
+  .time-banner { align-items: flex-start; flex-wrap: wrap; }
+  .time-banner-actions { width: 100%; }
+}

@@ -524,7 +524,52 @@ try {
   assert.equal(await page.locator('#observations').inputValue(), 'No perder esta nota durante un conflicto');
   await page.locator('[data-close-modal]').first().click();
   await page.locator('#caseModal').waitFor({ state: 'hidden' });
+  // Project and billing permissions work for accounts without a global admin role.
+  await page.locator('#usersTab').click();
+  for (const [username, permission] of [['ProyectoQA', 'implementations'], ['FacturaQA', 'services']]) {
+    await page.locator('#userName').fill(username); await page.locator('#userUsername').fill(username); await page.locator('#userPassword').fill('qa-password-123456');
+    await page.locator('[name="userPermission"]').evaluateAll((inputs, allowed) => inputs.forEach(input => { input.checked = input.value === allowed; }), permission);
+    await page.locator('#saveUserButton').click(); await page.locator('#usersBody tr').filter({ hasText: username }).waitFor();
+  }
+  const projectUser = accounts.find(account => account.appMetadata.username === 'ProyectoQA');
+  const cooperativeId = data.cooperatives.find(cooperative => cooperative.name === 'Cooperativa QA').id;
+  await page.locator('[data-tab-target="implementationsSection"]').click(); await page.locator('#newImplementation').click();
+  await page.locator('#implementationCooperative').selectOption(cooperativeId); await page.locator('#implementationStart').fill('2026-11-09');
+  await page.locator('#implementationTeam').selectOption(projectUser.id);
+  await page.locator('#implementationForm button[type="submit"]').click(); await page.locator('#implementationForm').waitFor({ state: 'hidden' });
+  assert.equal(data.implementations[0].activities.length, 53);
+  assert.equal(await page.locator('[data-implementation-edit]').count(), 53);
+  const projectContext = await context(), projectPage = await projectContext.newPage(); await projectPage.goto(url); await login(projectPage, 'ProyectoQA');
+  assert.equal(await projectPage.locator('[data-tab-target="tasksSection"]').isVisible(), false);
+  assert.equal(await projectPage.locator('#openCreateTask').isVisible(), false);
+  await projectPage.locator('[data-tab-target="implementationsSection"]').click();
+  await projectPage.locator('[data-implementation-timer]').first().click();
+  await projectPage.locator('#timerBanner').waitFor({ state: 'visible' });
+  assert.equal(data.timeEntries.at(-1).itemType, 'implementation');
+  assert.equal(data.timeEntries.at(-1).projectId, data.implementations[0].projectId);
+  await projectPage.locator('[data-implementation-edit]').first().click();
+  await projectPage.locator('#implementationActivityStatus').selectOption('Completado');
+  const actualStart = await projectPage.locator('#implementationActivityActualStart').inputValue();
+  await projectPage.locator('#implementationActivityActualEnd').fill(actualStart);
+  await projectPage.locator('#implementationActivityForm button[type="submit"]').click();
+  await projectPage.locator('#implementationActivityForm').waitFor({ state: 'hidden' });
+  assert.equal(data.implementations[0].activities[0].progress, 100); assert.equal(data.timeEntries.at(-1).state, 'stopped');
+  await projectPage.screenshot({ path: 'qa-output/implementation-desktop.png' });
+  await projectPage.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await projectPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'implementation must fit a mobile viewport');
+  await projectPage.screenshot({ path: 'qa-output/implementation-mobile.png' });
+  await page.locator('[data-tab-target="servicesSection"]').click();
+  await page.locator('#serviceCooperative').selectOption(cooperativeId); await page.locator('#servicePerson').fill('Cliente QA');
+  await page.locator('#serviceDescription').fill('Servicio compartido QA'); await page.locator('#serviceQuantity').fill('2'); await page.locator('#serviceUnitPrice').fill('25');
+  await page.locator('#saveServiceButton').click(); await page.locator('#servicesBody tr').filter({ hasText: 'Servicio compartido QA' }).waitFor();
+  const billingContext = await context(), billingPage = await billingContext.newPage(); await billingPage.goto(url); await login(billingPage, 'FacturaQA');
+  await billingPage.locator('[data-tab-target="servicesSection"]').click();
+  await billingPage.locator('#servicesBody tr').filter({ hasText: 'Servicio compartido QA' }).getByRole('button', { name: 'Factura realizada' }).click();
+  await billingPage.locator('#serviceMessage').getByText('Servicio marcado como facturado.', { exact: true }).waitFor();
+  assert.equal(data.services[0].invoiceStatus, 'invoiced');
+  await billingPage.locator('#serviceInvoiceFilter').selectOption('pending'); assert.equal(await billingPage.locator('#servicesBody tr').count(), 0);
+  await billingPage.locator('#serviceInvoiceFilter').selectOption('invoiced'); assert.equal(await billingPage.locator('#servicesBody tr').count(), 1);
+  await projectContext.close(); await billingContext.close();
   assert.deepEqual(errors, []);
   console.log('PASS: catalogo, historicos, dictado, ventanas protegidas, Ctrl+S, reintentos y conflictos sin perder formularios.');
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
-

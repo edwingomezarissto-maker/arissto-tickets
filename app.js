@@ -223,6 +223,7 @@ const formFields = {
   clientRequest: document.getElementById("clientRequest"),
   currentProcess: document.getElementById("currentProcess"),
   observations: document.getElementById("observations"),
+  projectId: document.getElementById("caseProjectId"),
 };
 
 const cooperativeFields = {
@@ -247,6 +248,7 @@ const taskFields = {
   id: document.getElementById("taskId"),
   title: document.getElementById("taskTitle"),
   owner: document.getElementById("taskOwner"),
+  projectId: document.getElementById("taskProjectId"),
   progress: document.getElementById("taskProgress"),
   details: document.getElementById("taskDetails"),
 };
@@ -256,6 +258,11 @@ let catalogCanEdit = location.protocol === "file:";
 
 window.ARISSTO_APP = {
   catalog: () => structuredClone(state.cooperatives),
+  projectName: id => window.ARISSTO_TIME?.projectName(id) || 'Arissto Financiero',
+  timeItem(kind, id) {
+    const row = (kind === 'case' ? state.cases : state.tasks).find(item => item.id === id);
+    return row ? { id: row.id, title: row.title, projectId: row.projectId || 'project-arissto-financiero' } : null;
+  },
   caseSelection: () => ({ cooperativeId: formFields.cooperativeId.value, contactId: formFields.contactId.value }),
   selectCooperative(id) {
     const cooperative = state.cooperatives.find(item => item.id === id);
@@ -287,6 +294,7 @@ window.ARISSTO_APP = {
     if (!state.cooperatives.some(item => item.id === state.selectedCooperativeId)) {
       state.selectedCooperativeId = state.cooperatives[0]?.id || "";
     }
+    window.ARISSTO_TIME?.receive(data);
     render();
   },
   clear() {
@@ -307,7 +315,8 @@ window.ARISSTO_APP = {
   },
   editing() {
     return Boolean(document.querySelector('.modal-backdrop[aria-hidden="false"]')) ||
-      Boolean(document.activeElement?.closest('#cooperativeForm, #contactForm, #userForm'));
+      Boolean(document.querySelector('#implementationActivityForm:not([hidden]), #implementationForm:not([hidden])')) ||
+      Boolean(document.activeElement?.closest('#cooperativeForm, #contactForm, #userForm, #implementationTeamForm, #serviceForm'));
   },
   legacy() {
     const read = (key) => {
@@ -522,6 +531,7 @@ function normalizeCaseRecord(supportCase) {
     id: String(supportCase.id || createId()).trim(),
     cooperativeId: cleanText(supportCase.cooperativeId),
     contactId: cleanText(supportCase.contactId),
+    projectId: cleanText(supportCase.projectId),
     ownerId: supportCase.ownerId || "",
     _version: supportCase._version || "",
     title: cleanText(supportCase.title || supportCase.caseName || supportCase.case || supportCase.name),
@@ -552,6 +562,7 @@ function normalizeTaskRecord(task) {
     owner: cleanText(task.owner || task.encargado),
     progress: cleanText(task.progress || task.done || task.hecho),
     details: cleanText(task.details || task.detalles),
+    projectId: cleanText(task.projectId),
     createdAt: cleanText(task.createdAt) || now,
     updatedAt: cleanText(task.updatedAt) || cleanText(task.createdAt) || now,
   };
@@ -724,6 +735,7 @@ async function importSelectedCasesAndTasks() {
 
 function normalizeImportedCase(row) {
   const normalized = normalizeCaseRecord(row || {});
+  if (!window.ARISSTO_TIME?.hasProject(normalized.projectId)) normalized.projectId = 'project-arissto-financiero';
   const cooperative = state.cooperatives.find(item => item.id === normalized.cooperativeId);
   if (!cooperative) { normalized.cooperativeId = ''; normalized.contactId = ''; }
   else if (!cooperative.contacts.some(item => item.id === normalized.contactId)) normalized.contactId = '';
@@ -734,6 +746,7 @@ function normalizeImportedCase(row) {
 
 function normalizeImportedTask(row) {
   const normalized = normalizeTaskRecord(row || {});
+  if (!window.ARISSTO_TIME?.hasProject(normalized.projectId)) normalized.projectId = 'project-arissto-financiero';
   delete normalized._version;
   normalized.ownerId = "";
   return normalized;
@@ -1225,6 +1238,7 @@ function renderCasesTable() {
       <td>${escapeHtml(supportCase.cooperative)}</td>
       <td>${escapeHtml(supportCase.requester || "Sin solicitante")}</td>
       <td>${escapeHtml(supportCase.requesterPhone || "Sin telefono")}</td>
+      <td>${escapeHtml(window.ARISSTO_APP.projectName(supportCase.projectId))}</td>
       <td>${escapeHtml(supportCase.owner)}</td>
       <td>${createStatusBadge(supportCase.status)}</td>
       <td>${createPriorityBadge(supportCase.priority)}</td>
@@ -1235,6 +1249,7 @@ function renderCasesTable() {
           <button class="text-button" type="button" data-action="view" data-id="${supportCase.id}">Ver detalle</button>
           <button class="text-button" type="button" data-action="edit" data-id="${supportCase.id}">Editar</button>
           <button class="text-button" type="button" data-action="process" data-id="${supportCase.id}">Actualizar proceso</button>
+          <button class="secondary-button" type="button" data-time-start="case" data-id="${supportCase.id}">Tomar caso</button>
           <button class="secondary-button" type="button" data-action="finish" data-id="${supportCase.id}" ${supportCase.status === "Finalizado" ? "disabled" : ""}>Finalizar</button>
           <button class="danger-button" type="button" data-action="delete" data-id="${supportCase.id}">Eliminar</button>
         </div>
@@ -1280,8 +1295,10 @@ function renderTasksTable() {
       <td>${escapeHtml(task.progress || "Sin avance registrado")}</td>
       <td>${escapeHtml(task.details || "Sin detalles")}</td>
       <td>${formatDateTime(task.createdAt)}</td>
+      <td>${escapeHtml(window.ARISSTO_APP.projectName(task.projectId))}</td>
       <td>
         <div class="actions compact-actions">
+          <button class="secondary-button" type="button" data-time-start="task" data-id="${task.id}">Iniciar tarea</button>
           <button class="text-button" type="button" data-action="edit-task" data-id="${task.id}">Editar</button>
           <button class="danger-button" type="button" data-action="delete-task" data-id="${task.id}">Eliminar</button>
         </div>
@@ -1400,6 +1417,7 @@ function openCreateModal() {
   formFields.version.value = "";
   formFields.cooperativeId.value = "";
   formFields.contactId.value = "";
+  formFields.projectId.value = 'project-arissto-financiero';
   updateCaseCatalogButtons();
   window.ARISSTO_CLOUD?.prepareAssignment("case");
   clearValidation(elements.caseForm, elements.formAlert);
@@ -1412,6 +1430,7 @@ function openCreateTaskModal() {
   elements.taskModalTitle.textContent = "Crear tarea";
   elements.taskForm.reset();
   taskFields.id.value = "";
+  taskFields.projectId.value = 'project-arissto-financiero';
   window.ARISSTO_CLOUD?.prepareAssignment("task");
   clearValidation(elements.taskForm, elements.taskAlert);
   openModal(elements.taskModal);
@@ -1428,6 +1447,7 @@ function openEditTaskModal(id) {
   taskFields.id.value = task.id;
   taskFields.title.value = task.title;
   taskFields.owner.value = task.owner;
+  taskFields.projectId.value = task.projectId || 'project-arissto-financiero';
   taskFields.progress.value = task.progress || "";
   taskFields.details.value = task.details || "";
   window.ARISSTO_CLOUD?.prepareAssignment("task", task);
@@ -1449,6 +1469,7 @@ function openEditModal(id) {
   formFields.cooperative.value = supportCase.cooperative;
   formFields.cooperativeId.value = supportCase.cooperativeId || '';
   formFields.contactId.value = supportCase.contactId || '';
+  formFields.projectId.value = supportCase.projectId || 'project-arissto-financiero';
   formFields.requester.value = supportCase.requester || "";
   formFields.requesterPhone.value = supportCase.requesterPhone || "";
   formFields.requesterPosition.value = supportCase.requesterPosition || "";
@@ -1555,6 +1576,7 @@ async function handleCaseSubmit(event) {
     formFields.cooperative,
     formFields.requester,
     formFields.owner,
+    formFields.projectId,
     formFields.status,
     formFields.priority,
     formFields.requestDate,
@@ -1600,6 +1622,7 @@ async function persistCaseForm(openCycle) {
     cooperative: formFields.cooperative.value.trim(),
     cooperativeId: formFields.cooperativeId.value,
     contactId: formFields.contactId.value,
+    projectId: formFields.projectId.value,
     requester: formFields.requester.value.trim(),
     requesterPhone: formFields.requesterPhone.value.trim(),
     requesterPosition: formFields.requesterPosition.value.trim(),
@@ -1646,7 +1669,7 @@ async function handleTaskSubmit(event) {
   if (elements.taskForm.dataset.saving === 'true') return;
   clearValidation(elements.taskForm, elements.taskAlert);
 
-  if (!validateRequiredFields([taskFields.title, taskFields.owner], elements.taskAlert)) {
+  if (!validateRequiredFields([taskFields.title, taskFields.owner, taskFields.projectId], elements.taskAlert)) {
     return;
   }
 
@@ -1660,6 +1683,7 @@ async function persistTaskForm(openCycle) {
   const taskData = {
     ownerId: window.ARISSTO_CLOUD?.assignedAccount("task") || "",
     title: taskFields.title.value.trim(),
+    projectId: taskFields.projectId.value,
     owner: taskFields.owner.value.trim(),
     progress: taskFields.progress.value.trim(),
     details: taskFields.details.value.trim(),
@@ -2168,5 +2192,4 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-
 

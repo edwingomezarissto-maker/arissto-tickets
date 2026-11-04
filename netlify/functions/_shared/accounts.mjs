@@ -3,9 +3,10 @@ import { DataError, compactData } from './records.mjs';
 const primaryEmails = new Set(['egomez@arissto.invalid', 'admin@arissto.invalid']);
 export const primaryAccount = user => user?.appMetadata?.arisstoPrimaryAdmin === true;
 export const accountRole = user => user?.roles?.includes('admin') ? 'admin' : user?.roles?.includes('member') ? 'member' : '';
+export const accountPermissions = user => user?.permissions || user?.appMetadata?.permissions || ['cases', 'tasks', 'time'];
 export const accountUsername = user => user?.appMetadata?.username || (user?.email || '').split('@')[0];
 export const publicAccount = user => ({ id: user.id, name: user.name || user.userMetadata?.full_name || user.email || 'Usuario',
-  username: accountUsername(user), roles: user.roles || [], primaryAdmin: primaryAccount(user) });
+  username: accountUsername(user), roles: user.roles || [], permissions: accountPermissions(user), primaryAdmin: primaryAccount(user) });
 
 export async function listAccounts(admin) {
   const result = [];
@@ -35,7 +36,7 @@ export async function ensureAccountPolicy({ admin, getStore }) {
     const primary = primaryEmails.has((account.email || '').toLowerCase());
     await admin.updateUser(account.id, {
       app_metadata: { ...account.appMetadata, username: primary ? account.email.split('@')[0].toUpperCase() : accountUsername(account),
-        roles: [primary ? 'admin' : 'member'], arisstoPrimaryAdmin: primary },
+        roles: [primary ? 'admin' : 'member'], permissions: ['cases', 'tasks', 'services', 'time', 'implementations'], arisstoPrimaryAdmin: primary },
     });
   }
   for (let attempt = 0; attempt < 5; attempt++) {

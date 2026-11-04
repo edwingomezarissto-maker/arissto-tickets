@@ -1,6 +1,8 @@
-import { DataError, isAdmin, emptyData, visibleData, applyOperations } from './records.mjs';
-import { publicAccount as publicUser, accountRole, accountUsername, listAccounts, validateAccountChange } from './accounts.mjs';
+import { DataError, isAdmin, emptyData, visibleData, applyOperations, canAccess } from './records.mjs';
+import { publicAccount as publicUser, accountRole, accountPermissions, accountUsername, listAccounts, validateAccountChange } from './accounts.mjs';
 import { changeCatalog } from './catalog.mjs';
+import { changeTimer, createProject, ensureProjectData } from './time.mjs';
+import { changeImplementation } from './implementations.mjs';
 
 const cleanUsername = value => typeof value === 'string' ? value.trim() : '';
 const usernameEmail = username => username.toLowerCase() + '@arissto.invalid';
@@ -60,7 +62,7 @@ export function createService({ getUser, admin, getStore }) {
       const next = structuredClone(data);
       let transferred = 0;
 
-      for (const collection of ['cases', 'tasks']) {
+      for (const collection of ['cases', 'tasks', 'services']) {
         for (const row of next[collection] || []) {
           if (!row.deleted && row.ownerId === fromUserId) {
             row.ownerId = toUser.id;
@@ -72,6 +74,28 @@ export function createService({ getUser, admin, getStore }) {
         }
       }
 
+      for (const implementation of next.implementations || []) {
+        let changed = false;
+        if (implementation.createdBy === fromUserId) { implementation.createdBy = toUser.id; implementation.teamIds = [...new Set([...(implementation.teamIds || []), toUser.id])]; changed = true; }
+        if (implementation.teamIds?.includes(fromUserId)) { implementation.teamIds = implementation.teamIds.filter(id => id !== fromUserId); changed = true; }
+        for (const activity of implementation.activities) {
+          if (activity.assigneeId === fromUserId) { activity.assigneeId = ''; activity._version = crypto.randomUUID(); changed = true; }
+        }
+        if (changed) { implementation.updatedAt = new Date().toISOString(); implementation._version = crypto.randomUUID(); transferred++; }
+      }
+      for (const entry of next.timeEntries || []) {
+        if (entry.ownerId !== fromUserId) continue;
+        if (entry.state === 'running') {
+          const segment = entry.segments?.at(-1);
+          if (segment && !segment.endedAt) segment.endedAt = new Date().toISOString();
+          entry.state = 'paused';
+        }
+        entry.ownerId = toUser.id;
+        entry.updatedAt = new Date().toISOString();
+        entry._version = crypto.randomUUID();
+        transferred += 1;
+      }
+
       if (!transferred) return 0;
       const result = await store.setJSON('records', next, current ? { onlyIfMatch: current.etag } : { onlyIfNew: true });
       if (result.modified) return transferred;
@@ -79,7 +103,19 @@ export function createService({ getUser, admin, getStore }) {
     throw new DataError('No se pudieron transferir los registros del usuario. Intente nuevamente.', 409);
   }
 
-  async function updateAccount(existing, { name, username, password, role = accountRole(existing) || 'member' }) {
+  async function ensureSharedProjects(store) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const current = await store.getWithMetadata('records', { type: 'json' });
+      const data = current?.data || emptyData();
+      const next = ensureProjectData(data);
+      if (JSON.stringify(next.projects) === JSON.stringify(data.projects || []) && Array.isArray(data.timeEntries) && Array.isArray(data.services)) return data;
+      const result = await store.setJSON('records', next, current ? { onlyIfMatch: current.etag } : { onlyIfNew: true });
+      if (result.modified) return next;
+    }
+    throw new DataError('No se pudo preparar la lista compartida de proyectos. Intente nuevamente.', 409);
+  }
+
+  async function updateAccount(existing, { name, username, password, role = accountRole(existing) || 'member', permissions = accountPermissions(existing) }) {
     const nextUsername = cleanUsername(username);
     if (!/^[A-Za-z0-9._-]{3,40}$/.test(nextUsername)) throw new DataError('Ingrese un usuario valido de 3 a 40 caracteres.');
     if (password && !validPassword(password)) throw new DataError('La contrasena debe contener de 3 a 128 caracteres.');
@@ -87,9 +123,11 @@ export function createService({ getUser, admin, getStore }) {
     if (isAdmin(existing) && role !== 'admin' && (await rawUsers()).filter(isAdmin).length <= 1) {
       throw new DataError('Debe conservar al menos una cuenta de administrador.', 403);
     }
+    const allowedPermissions = ['cases', 'tasks', 'services', 'time', 'implementations'];
+    if (!Array.isArray(permissions) || permissions.some(value => !allowedPermissions.includes(value))) throw new DataError('Seleccione accesos validos para la cuenta.');
     const updates = { email: usernameEmail(nextUsername),
       user_metadata: { ...existing.userMetadata, full_name: (name || existing.name || nextUsername).trim() },
-      app_metadata: { ...existing.appMetadata, roles: [role], username: nextUsername } };
+      app_metadata: { ...existing.appMetadata, roles: [role], permissions: role === 'admin' ? allowedPermissions : [...new Set(permissions)], username: nextUsername } };
     if (password) updates.password = password;
     return admin.updateUser(existing.id, updates);
   }
@@ -163,31 +201,61 @@ export function createService({ getUser, admin, getStore }) {
           if (typeof body.id !== 'string') throw new DataError('Cuenta invalida.');
           const existing = await admin.getUser(body.id);
           const updated = await updateAccount(existing, { name: body.name.trim(), username, password: body.password,
-            role: role || accountRole(existing) || 'member' });
+            role: role || accountRole(existing) || 'member', permissions: body.permissions || accountPermissions(existing) });
           return reply({ user: publicUser(updated) });
         }
         validateAccountChange(null, username, role);
+        const permissions = body.permissions || ['cases', 'tasks'];
+        if (!Array.isArray(permissions) || permissions.some(value => !['cases', 'tasks', 'services', 'time', 'implementations'].includes(value))) throw new DataError('Seleccione accesos validos para la cuenta.');
         const created = await admin.createUser({ email: usernameEmail(username), password: body.password,
-          data: { user_metadata: { full_name: body.name.trim() }, app_metadata: { roles: [role], username } } });
+          data: { user_metadata: { full_name: body.name.trim() }, app_metadata: { roles: [role], permissions: role === 'admin' ? ['cases', 'tasks', 'services', 'time', 'implementations'] : [...new Set(permissions)], username } } });
         return reply({ user: publicUser(created) }, 201);
       }
 
       const store = getStore({ name: 'arissto-support-v1', consistency: 'strong' });
       await migrateLegacyEdwinOwnership(store, user);
+      await ensureSharedProjects(store);
 
       if (request.method === 'GET') {
-        const data = await store.get('records', { type: 'json' }) || emptyData();
-        return reply({ ...visibleData(data, user), user: publicUser(user), users: isAdmin(user) ? await users() : [publicUser(user)] });
+        const data = ensureProjectData(await store.get('records', { type: 'json' }) || emptyData());
+        const implementationPeople = canAccess(user, 'implementations') ? (await rawUsers()).filter(account => permitted(account) && canAccess(account, 'implementations')).map(account => ({ id: account.id, name: publicUser(account).name })) : [];
+        return reply({ ...visibleData(data, user), implementationPeople, user: publicUser(user), users: isAdmin(user) ? await users() : [publicUser(user)] });
       }
+      if (body.action === 'service-invoice-status') {
+        if (!canAccess(user, 'services')) throw new DataError('Su cuenta no tiene acceso a facturación.', 403);
+        if (typeof body.id !== 'string' || !body.id || !['pending', 'invoiced'].includes(body.status)) throw new DataError('Seleccione un estado de factura válido.');
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const current = await store.getWithMetadata('records', { type: 'json' });
+          const data = ensureProjectData(current?.data || emptyData());
+          const row = data.services.find(item => item.id === body.id && !item.deleted);
+          if (!row) throw new DataError('No se encontró el servicio.', 404);
+          row.invoiceStatus = body.status;
+          row.invoiceMarkedAt = body.status === 'invoiced' ? new Date().toISOString() : '';
+          row.invoiceMarkedBy = body.status === 'invoiced' ? publicUser(user).name : '';
+          row.updatedAt = new Date().toISOString(); row._version = crypto.randomUUID();
+          const result = await store.setJSON('records', data, current ? { onlyIfMatch: current.etag } : { onlyIfNew: true });
+          if (result.modified) return reply(visibleData(data, user));
+        }
+        return reply({ error: 'Hay cambios simultáneos. Intente nuevamente.' }, 409);
+      }
+      if (body.action === 'project-create' && !canAccess(user, 'time')) throw new DataError('Su cuenta no tiene acceso a proyectos.', 403);
+      if (typeof body.action === 'string' && body.action.startsWith('timer-') && !canAccess(user, 'time') && !canAccess(user, 'implementations')) throw new DataError('Su cuenta no tiene acceso al control de tiempo.', 403);
+      const eligibleTeam = typeof body.action === 'string' && body.action.startsWith('implementation-') ? new Set((await rawUsers()).filter(account => permitted(account) && canAccess(account, 'implementations')).map(account => account.id)) : new Set();
       const allowedOwners = new Set(isAdmin(user) ? (await users()).map(item => item.id) : [user.id]);
       for (let attempt = 0; attempt < 5; attempt++) {
         const current = await store.getWithMetadata('records', { type: 'json' });
+        const base = ensureProjectData(current?.data || emptyData());
         const catalogChange = ['catalog-create-cooperative', 'catalog-create-contact', 'catalog-update-contact'].includes(body.action)
-          ? changeCatalog(current?.data || emptyData(), body, user) : null;
-        const next = catalogChange?.next || applyOperations(current?.data || emptyData(), body.operations, user, allowedOwners, body.importing === true);
+          ? changeCatalog(base, body, user) : null;
+        const projectChange = body.action === 'project-create' ? createProject(base, body, user) : null;
+        const timerChange = typeof body.action === 'string' && body.action.startsWith('timer-') ? changeTimer(base, body, user) : null;
+        const implementationChange = typeof body.action === 'string' && body.action.startsWith('implementation-') ? changeImplementation(base, body, user, eligibleTeam) : null;
+        const next = implementationChange?.next || catalogChange?.next || projectChange?.next || timerChange?.next || applyOperations(base, body.operations, user, allowedOwners, body.importing === true);
         if (new TextEncoder().encode(JSON.stringify(next)).length > 4500000) throw new DataError('El almacenamiento alcanzo el limite de esta version. Contacte al administrador.', 413);
         const result = await store.setJSON('records', next, current ? { onlyIfMatch: current.etag } : { onlyIfNew: true });
-        if (result.modified) return reply({ ...visibleData(next, user), ...(catalogChange ? { created: catalogChange.created } : {}) });
+        if (result.modified) return reply({ ...visibleData(next, user),
+          ...(catalogChange || projectChange ? { created: (catalogChange || projectChange).created } : {}),
+          ...(timerChange ? { timer: timerChange.timer, pausedPrevious: timerChange.pausedPrevious === true } : {}) });
       }
       return reply({ error: 'Hay cambios simultaneos. Intente guardar nuevamente.' }, 409);
     } catch (error) {
@@ -198,4 +266,3 @@ export function createService({ getUser, admin, getStore }) {
     }
   };
 }
-

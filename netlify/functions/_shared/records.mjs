@@ -5,8 +5,10 @@ export class DataError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
 export const isAdmin = (user) => user?.roles?.includes('admin') === true;
-export const emptyData = () => ({ cases: [], tasks: [], cooperatives: [] });
-const collections = ['cases', 'tasks', 'cooperatives'];
+export const DEFAULT_PROJECT_ID = 'project-arissto-financiero';
+export const defaultProject = () => ({ id: DEFAULT_PROJECT_ID, name: 'Arissto Financiero', cooperativeId: '', archived: false, _version: 'system' });
+export const emptyData = () => ({ cases: [], tasks: [], cooperatives: [], services: [], implementations: [], projects: [defaultProject()], timeEntries: [] });
+const collections = ['cases', 'tasks', 'cooperatives', 'services'];
 export function compactData(data) {
   const next = structuredClone(data);
   next.deletedIds = Object.fromEntries(collections.map(key => {
@@ -22,10 +24,17 @@ export function compactData(data) {
 }
 const canRead = (row, user) => isAdmin(user) || row.ownerId === user.id;
 export function visibleData(data, user) {
-  return Object.fromEntries(collections.map(key => [key, data[key].filter(row =>
-    !row.deleted && (key === 'cooperatives' || canRead(row, user))).map(row =>
+  const visible = Object.fromEntries(collections.map(key => [key, (data[key] || []).filter(row =>
+    !row.deleted && (key === 'cooperatives' || (key === 'services' ? canAccess(user, 'services') : canAccess(user, key) && canRead(row, user)))).map(row =>
       key === 'cases' ? resolveCaseCatalog(row, data.cooperatives.filter(item => !item.deleted)) : row)]));
+  visible.implementations = (data.implementations || []).filter(row => canReadImplementation(row, user));
+  const mayUseProjects = canAccess(user, 'implementations') || canAccess(user, 'time') || canAccess(user, 'cases') || canAccess(user, 'tasks');
+  visible.projects = mayUseProjects ? (data.projects?.length ? data.projects : [defaultProject()]).filter(row => !row.archived) : [];
+  visible.timeEntries = canAccess(user, 'time') || canAccess(user, 'implementations') ? (data.timeEntries || []).filter(row => row.ownerId === user.id) : [];
+  return visible;
 }
+export const canAccess = (user, area) => isAdmin(user) || (user?.permissions || user?.appMetadata?.permissions || ['cases', 'tasks', 'time']).includes(area);
+export const canReadImplementation = (row, user) => canAccess(user, 'implementations') && (isAdmin(user) || row.createdBy === user.id || row.teamIds?.includes(user.id));
 export function synchronizeCaseCatalog(data, touch = true) {
   data.cases = data.cases.map(row => {
     const resolved = resolveCaseCatalog(row, data.cooperatives);
@@ -37,15 +46,17 @@ export function synchronizeCaseCatalog(data, touch = true) {
   return data;
 }
 const fields = {
-  cases: ['title', 'cooperativeId', 'contactId', 'cooperative', 'requester', 'requesterPhone', 'requesterPosition', 'owner',
+  cases: ['title', 'cooperativeId', 'contactId', 'projectId', 'cooperative', 'requester', 'requesterPhone', 'requesterPosition', 'owner',
     'status', 'priority', 'requestDate', 'commitmentDate', 'clientRequest', 'currentProcess', 'observations'],
-  tasks: ['title', 'owner', 'status', 'progress', 'details'],
+  tasks: ['title', 'projectId', 'owner', 'status', 'progress', 'details'],
+  services: ['date', 'cooperativeId', 'cooperative', 'person', 'description', 'quantity', 'unitPrice', 'notes'],
   cooperatives: ['name'],
 };
 function cleanRow(kind, raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new DataError('Registro invalido.');
   const result = {};
   for (const key of fields[kind]) {
+    if (kind === 'services' && ['quantity', 'unitPrice'].includes(key)) { result[key] = raw[key]; continue; }
     if (raw[key] != null && typeof raw[key] !== 'string') throw new DataError('Campo invalido: ' + key);
     result[key] = (raw[key] || '').trim();
     if (result[key].length > 30000) throw new DataError('El texto es demasiado largo.');
@@ -57,6 +68,12 @@ function cleanRow(kind, raw) {
       if (!contact || typeof contact.id !== 'string' || typeof contact.name !== 'string') throw new DataError('Contacto invalido.');
       return Object.fromEntries(['id', 'name', 'phone', 'position'].map(key => [key, String(contact[key] || '').slice(0, 300)]));
     });
+  } else if (kind === 'services') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(result.date) || !Number.isFinite(Date.parse(result.date))) throw new DataError('Indique una fecha válida.');
+    if (!result.cooperativeId || !result.cooperative || !result.person || !result.description) throw new DataError('Complete cooperativa, persona y servicio brindado.');
+    const quantity = Number(raw.quantity), unitPrice = Number(raw.unitPrice);
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1000000 || !Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 100000000) throw new DataError('Revise cantidad y precio unitario.');
+    result.quantity = quantity; result.unitPrice = unitPrice;
   } else {
     if (!result.title || !result.owner) throw new DataError('Complete el titulo y el encargado.');
     if (kind === 'cases') {
@@ -83,6 +100,7 @@ export function applyOperations(data, operations, user, allowedOwners = new Set(
   for (const op of operations) {
     if (!collections.includes(op.collection) || typeof op.id !== 'string' || !op.id || op.id.length > 200) throw new DataError('Registro invalido.');
     const kind = op.collection;
+    if (kind !== 'cooperatives' && !canAccess(user, kind === 'services' ? 'services' : kind)) throw new DataError('Su cuenta no tiene acceso a esta sección.', 403);
     const rows = next[kind];
     const index = rows.findIndex(row => row.id === op.id);
     const previous = rows[index];
@@ -101,6 +119,12 @@ export function applyOperations(data, operations, user, allowedOwners = new Set(
     }
     if (op.action !== 'put') throw new DataError('Accion invalida.');
     const row = cleanRow(kind, op.record);
+    if (kind === 'services') {
+      const changedAfterInvoice = previous?.invoiceStatus === 'invoiced' && fields.services.some(key => row[key] !== previous[key]);
+      row.invoiceStatus = previous?.invoiceStatus === 'invoiced' && !changedAfterInvoice ? 'invoiced' : 'pending';
+      row.invoiceMarkedAt = row.invoiceStatus === 'invoiced' ? previous?.invoiceMarkedAt || '' : '';
+      row.invoiceMarkedBy = row.invoiceStatus === 'invoiced' ? previous?.invoiceMarkedBy || '' : '';
+    }
     if (kind === 'cases' && (row.cooperativeId || row.contactId)) {
       const cooperative = next.cooperatives.find(item => item.id === row.cooperativeId);
       if (!cooperative) throw new DataError('Seleccione una cooperativa vigente del catalogo.');
@@ -108,10 +132,20 @@ export function applyOperations(data, operations, user, allowedOwners = new Set(
         throw new DataError('El cliente seleccionado no pertenece a esa cooperativa.');
       }
     }
+    if (kind === 'services') {
+      const cooperative = next.cooperatives.find(item => item.id === row.cooperativeId && !item.deleted);
+      if (!cooperative) throw new DataError('Seleccione una cooperativa vigente del catalogo.');
+      row.cooperative = cooperative.name;
+    }
     if (kind !== 'cooperatives') {
       row.ownerId = isAdmin(user) ? (op.record.ownerId || previous?.ownerId || user.id) : user.id;
       if (!isAdmin(user) && op.record.ownerId && op.record.ownerId !== user.id) throw new DataError('No puede asignar registros a otra cuenta.', 403);
       if (row.ownerId !== user.id && !allowedOwners.has(row.ownerId)) throw new DataError('Seleccione una cuenta activa.');
+    }
+    if (kind === 'cases' || kind === 'tasks') {
+      row.projectId ||= DEFAULT_PROJECT_ID;
+      const project = (next.projects || [defaultProject()]).find(item => item.id === row.projectId && !item.archived);
+      if (!project) throw new DataError('Seleccione un proyecto vigente.');
     }
     const now = new Date().toISOString();
     Object.assign(row, { id: op.id, _version: randomUUID(), createdAt: previous?.createdAt || now, updatedAt: now });
@@ -125,4 +159,3 @@ export function applyOperations(data, operations, user, allowedOwners = new Set(
   }
   return synchronizeCaseCatalog(next);
 }
-
