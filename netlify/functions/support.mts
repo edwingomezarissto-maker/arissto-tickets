@@ -15,5 +15,5 @@ export default async function handler(request: Request) {
   }
   return service(request);
 }
-export const config = { path: ['/api/support', '/api/users', '/api/profile'] };
+export const config = { path: ['/api/support', '/api/users', '/api/profile', '/api/links', '/api/vault'] };
 

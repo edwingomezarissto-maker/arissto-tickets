@@ -440,6 +440,7 @@ function activateTab(tabId) {
   elements.tabPanels.forEach((panel) => {
     panel.classList.toggle("active", panel.id === tabId);
   });
+  document.dispatchEvent(new CustomEvent("arissto:tab", { detail: tabId }));
 }
 
 function toggleTheme() {
@@ -1233,6 +1234,7 @@ function renderCasesTable() {
   filteredCases.forEach((supportCase) => {
     const row = document.createElement("tr");
     const overdueLabel = isOverdue(supportCase) ? '<span class="overdue-text">Vencido</span>' : "";
+    const id = escapeHtml(supportCase.id);
     row.innerHTML = `
       <td><span class="case-name">${escapeHtml(supportCase.title)}</span></td>
       <td>${escapeHtml(supportCase.cooperative)}</td>
@@ -1242,16 +1244,16 @@ function renderCasesTable() {
       <td>${escapeHtml(supportCase.owner)}</td>
       <td>${createStatusBadge(supportCase.status)}</td>
       <td>${createPriorityBadge(supportCase.priority)}</td>
-      <td>${formatDate(supportCase.requestDate)}</td>
-      <td>${formatDate(supportCase.commitmentDate)}${overdueLabel}</td>
+      <td>${escapeHtml(formatDate(supportCase.requestDate))}</td>
+      <td>${escapeHtml(formatDate(supportCase.commitmentDate))}${overdueLabel}</td>
       <td>
         <div class="actions">
-          <button class="text-button" type="button" data-action="view" data-id="${supportCase.id}">Ver detalle</button>
-          <button class="text-button" type="button" data-action="edit" data-id="${supportCase.id}">Editar</button>
-          <button class="text-button" type="button" data-action="process" data-id="${supportCase.id}">Actualizar proceso</button>
-          <button class="secondary-button" type="button" data-time-start="case" data-id="${supportCase.id}">Tomar caso</button>
-          <button class="secondary-button" type="button" data-action="finish" data-id="${supportCase.id}" ${supportCase.status === "Finalizado" ? "disabled" : ""}>Finalizar</button>
-          <button class="danger-button" type="button" data-action="delete" data-id="${supportCase.id}">Eliminar</button>
+          <button class="text-button" type="button" data-action="view" data-id="${id}">Ver detalle</button>
+          <button class="text-button" type="button" data-action="edit" data-id="${id}">Editar</button>
+          <button class="text-button" type="button" data-action="process" data-id="${id}">Actualizar proceso</button>
+          <button class="secondary-button" type="button" data-time-start="case" data-id="${id}">Tomar caso</button>
+          <button class="secondary-button" type="button" data-action="finish" data-id="${id}" ${supportCase.status === "Finalizado" ? "disabled" : ""}>Finalizar</button>
+          <button class="danger-button" type="button" data-action="delete" data-id="${id}">Eliminar</button>
         </div>
       </td>
     `;
@@ -1289,6 +1291,7 @@ function renderTasksTable() {
   elements.tasksEmptyState.classList.remove("visible");
   state.tasks.forEach((task) => {
     const row = document.createElement("tr");
+    const id = escapeHtml(task.id);
     row.innerHTML = `
       <td><span class="case-name">${escapeHtml(task.title)}</span></td>
       <td>${escapeHtml(task.owner)}</td>
@@ -1298,9 +1301,9 @@ function renderTasksTable() {
       <td>${escapeHtml(window.ARISSTO_APP.projectName(task.projectId))}</td>
       <td>
         <div class="actions compact-actions">
-          <button class="secondary-button" type="button" data-time-start="task" data-id="${task.id}">Iniciar tarea</button>
-          <button class="text-button" type="button" data-action="edit-task" data-id="${task.id}">Editar</button>
-          <button class="danger-button" type="button" data-action="delete-task" data-id="${task.id}">Eliminar</button>
+          <button class="secondary-button" type="button" data-time-start="task" data-id="${id}">Iniciar tarea</button>
+          <button class="text-button" type="button" data-action="edit-task" data-id="${id}">Editar</button>
+          <button class="danger-button" type="button" data-action="delete-task" data-id="${id}">Eliminar</button>
         </div>
       </td>
     `;
@@ -1386,8 +1389,8 @@ function renderSelectedCooperative() {
       <td>${escapeHtml(contact.phone)}</td>
       ${catalogCanEdit ? `<td>
         <div class="actions compact-actions">
-          <button class="text-button" type="button" data-action="edit-contact" data-id="${contact.id}">Editar</button>
-          <button class="danger-button" type="button" data-action="delete-contact" data-id="${contact.id}">Eliminar</button>
+          <button class="text-button" type="button" data-action="edit-contact" data-id="${escapeHtml(contact.id)}">Editar</button>
+          <button class="danger-button" type="button" data-action="delete-contact" data-id="${escapeHtml(contact.id)}">Eliminar</button>
         </div>
       </td>` : ''}
     `;
@@ -2115,11 +2118,11 @@ function getTodayString() {
 }
 
 function createStatusBadge(status) {
-  return `<span class="badge ${getStatusClass(status)}">${escapeHtml(status)}</span>`;
+  return `<span class="badge ${escapeHtml(getStatusClass(status))}">${escapeHtml(status)}</span>`;
 }
 
 function createPriorityBadge(priority) {
-  return `<span class="badge ${getPriorityClass(priority)}">${escapeHtml(priority)}</span>`;
+  return `<span class="badge ${escapeHtml(getPriorityClass(priority))}">${escapeHtml(priority)}</span>`;
 }
 
 function getStatusClass(status) {

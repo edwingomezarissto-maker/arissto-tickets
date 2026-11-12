@@ -4,6 +4,8 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import assert from 'node:assert/strict';
 import { createService } from '../netlify/functions/_shared/service.mjs';
+import { memoryResourceStore } from './fixtures/resource-store.mjs';
+import { checkResources } from './browser-resources.mjs';
 
 // These accounts and records exist only in this isolated browser test.
 const accounts = [{ id: 'root', email: 'egomez@arissto.invalid', name: 'Edwin Gomez',
@@ -16,6 +18,7 @@ let etag = 0;
 let failNextWrite = false;
 let supportWriteGate = null;
 let supportWriteCount = 0;
+const library = memoryResourceStore();
 const store = {
   get: async () => data,
   getWithMetadata: async () => data ? { data, etag: String(etag) } : null,
@@ -72,6 +75,7 @@ const rawUser = user => ({ id: user.id, email: user.email, confirmed_at: '2026-0
 async function context({ speech = true } = {}) {
   const context = await browser.newContext();
   await context.addInitScript(enabled => {
+    window.Chart = class { destroy() {} };
     window.__speechInstances = [];
     window.webkitSpeechRecognition = undefined;
     window.SpeechRecognition = enabled ? class {
@@ -87,7 +91,7 @@ async function context({ speech = true } = {}) {
     } : undefined;
   }, speech);
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
-  await context.route('https://cdn.jsdelivr.net/**', route => route.fulfill({ contentType: 'text/javascript', body: 'window.Chart = class { constructor(){} destroy(){} };' }));
+  await context.route('https://cdn.jsdelivr.net/**', route => route.abort());
   await context.route('**/.netlify/identity/**', async route => {
     const req = route.request();
     const path = new URL(req.url()).pathname;
@@ -123,7 +127,7 @@ async function context({ speech = true } = {}) {
     const cookie = (await context.cookies()).find(item => item.name === 'nf_jwt');
     let actor = null;
     if (cookie) { try { const id = JSON.parse(Buffer.from(cookie.value.split('.')[1], 'base64url').toString()).sub; actor = accounts.find(item => item.id === id); } catch {} }
-    const service = createService({ getUser: async () => actor, admin, getStore: () => store });
+    const service = createService({ getUser: async () => actor, admin, getStore: ({ name }) => name === 'arissto-resources-v1' ? library : store });
     const result = await service(new Request(req.url(), { method: req.method(), headers: req.headers(), body: req.postData() }));
     await route.fulfill({ status: result.status, headers: Object.fromEntries(result.headers), body: await result.text() });
   });
@@ -569,7 +573,8 @@ try {
   assert.equal(data.services[0].invoiceStatus, 'invoiced');
   await billingPage.locator('#serviceInvoiceFilter').selectOption('pending'); assert.equal(await billingPage.locator('#servicesBody tr').count(), 0);
   await billingPage.locator('#serviceInvoiceFilter').selectOption('invoiced'); assert.equal(await billingPage.locator('#servicesBody tr').count(), 1);
+  await checkResources({ member: projectPage, admin: page, peer: billingPage, context, login, url });
   await projectContext.close(); await billingContext.close();
   assert.deepEqual(errors, []);
-  console.log('PASS: catalogo, historicos, dictado, ventanas protegidas, Ctrl+S, reintentos y conflictos sin perder formularios.');
+  console.log('PASS: cuentas, catálogo, casos, tareas, proyectos, facturación, enlaces compartidos y bóveda privada en dos navegadores.');
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

@@ -1,9 +1,11 @@
 import { login, logout, getUser, getSettings, handleAuthCallback,
   acceptInvite, onAuthChange } from '@netlify/identity';
 import { makeOperations, emptySnapshot } from './sync.mjs';
+import { registerResources } from './resources.js';
 
 const $ = id => document.getElementById(id);
 const local = location.protocol === 'file:';
+const resources = registerResources(api);
 let user = null;
 let users = [];
 let usersSignature = '';
@@ -33,6 +35,7 @@ function showLogin(text = 'Ingrese con el usuario y la contrasena de su cuenta.'
 
 function lock(text) {
   epoch++;
+  resources.setAccount(null);
   connected = false;
   user = null;
   users = [];
@@ -53,16 +56,19 @@ function lock(text) {
   showLogin(text);
 }
 
-async function api(path, body) {
+async function api(path, body, expectedAccount) {
+  const requestEpoch = epoch;
+  const headers = body ? { 'Content-Type': 'application/json' } : {};
+  if (expectedAccount) headers['X-Arissto-Account'] = expectedAccount;
   const response = await fetch(path, { method: body ? 'POST' : 'GET', credentials: 'same-origin', cache: 'no-store',
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(25000) });
   let data;
   try { data = await response.json(); } catch { throw new Error('El servicio de sincronizacion no esta disponible en esta direccion.'); }
   if (!response.ok) {
     const error = new Error(data.error || 'No se pudo guardar.');
     error.status = response.status;
-    if (response.status === 401) lock(error.message);
+    if (requestEpoch === epoch && (response.status === 401 || (expectedAccount && response.status === 403 && data.error?.startsWith('La sesión cambió')))) lock(error.message);
     throw error;
   }
   return data;
@@ -121,6 +127,7 @@ function drawUsers() {
 }
 
 function updateAccess() {
+  resources.setAccount(user);
   $('usersTab').hidden = !administrator();
   const permissions = new Set(user?.permissions || ['cases', 'tasks', 'time']);
   document.documentElement.classList.toggle('cases-access-disabled', !administrator() && !permissions.has('cases'));
@@ -154,7 +161,7 @@ async function reloadAccounts() {
 }
 
 async function deleteAccount(account, button) {
-  if (!confirm(`¿Eliminar la cuenta ${account.name} (${account.username}) del servidor?\n\nLa persona perdera el acceso. Sus casos, tareas y tiempos registrados se conservaran y se transferiran a su cuenta administradora.`)) return;
+  if (!confirm(`¿Eliminar la cuenta ${account.name} (${account.username}) del servidor?\n\nSe eliminará su bóveda privada. Sus casos, tareas y tiempos registrados se transferirán a su cuenta administradora.`)) return;
   button.disabled = true;
   const currentEpoch = epoch;
   try {
@@ -288,6 +295,7 @@ function prepareAssignment(kind, row) {
 }
 
 function showPassword(mode, token) {
+  resources.leave();
   passwordMode = mode;
   invitationToken = token;
   $('accessScreen').hidden = false;
@@ -305,7 +313,10 @@ function showPassword(mode, token) {
 
 async function start() {
   if (local) return;
-  onAuthChange(event => { if (event === 'logout') lock('Sesion cerrada.'); });
+  onAuthChange((event, current) => {
+    if (event === 'logout') lock('Sesion cerrada.');
+    else if (event === 'login' && connected && current?.id !== user?.id) lock('La cuenta cambió en otra pestaña. Vuelva a ingresar.');
+  });
   try {
     const probe = await fetch('/api/support', { cache: 'no-store', signal: AbortSignal.timeout(25000) });
     if (probe.status === 503) throw new Error('El administrador debe completar la activacion del sitio en Netlify.');
@@ -398,6 +409,7 @@ $('changePassword').addEventListener('click', () => showPassword('change'));
 $('cancelPasswordChange').addEventListener('click', () => {
   passwordMode = null; invitationToken = null; $('passwordForm').reset();
   $('accessScreen').hidden = true; $('appShell').hidden = false;
+  resources.setAccount(user);
 });
 $('refreshUsers').addEventListener('click', async event => {
   const button = event.currentTarget; button.disabled = true;

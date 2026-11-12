@@ -3,6 +3,7 @@ import { publicAccount as publicUser, accountRole, accountPermissions, accountUs
 import { changeCatalog } from './catalog.mjs';
 import { changeTimer, createProject, ensureProjectData } from './time.mjs';
 import { changeImplementation } from './implementations.mjs';
+import { personalVault, privateKeyPath, resourceStore, teamLinks } from './resources.mjs';
 
 const cleanUsername = value => typeof value === 'string' ? value.trim() : '';
 const usernameEmail = username => username.toLowerCase() + '@arissto.invalid';
@@ -156,7 +157,14 @@ export function createService({ getUser, admin, getStore }) {
         if (!body || typeof body !== 'object') throw new DataError('Solicitud invalida.');
       }
 
-      const path = new URL(request.url).pathname;
+      const url = new URL(request.url);
+      const path = url.pathname;
+      if (path === '/api/links' || path === '/api/vault') {
+        if (url.search) throw new DataError('Esta ruta no admite parámetros.');
+        if (request.headers.get('X-Arissto-Account') !== user.id) throw new DataError('La sesión cambió. Vuelva a iniciar sesión.', 403);
+        const store = resourceStore(getStore);
+        return reply(path === '/api/vault' ? await personalVault(store, user.id, body) : await teamLinks(store, user, body));
+      }
       if (path === '/api/profile') {
         if (request.method === 'GET') return reply({ user: publicUser(user) });
         const wantsPassword = typeof body.password === 'string' && body.password.length > 0;
@@ -173,7 +181,14 @@ export function createService({ getUser, admin, getStore }) {
         if (body.action === 'delete') {
           if (typeof body.id !== 'string' || !body.id) throw new DataError('Cuenta invalida.');
           if (body.id === user.id) throw new DataError('No puede eliminar la cuenta con la que tiene la sesion iniciada.', 403);
-          const existing = await admin.getUser(body.id);
+          let existing;
+          try { existing = await admin.getUser(body.id); }
+          catch (error) {
+            if (error.status !== 404) throw error;
+            // A retry after Identity deleted the account must still finish removing its encrypted file.
+            await resourceStore(getStore).delete(privateKeyPath(body.id));
+            return reply({ ok: true, transferred: 0, users: await users() });
+          }
           if (isAdmin(existing)) {
             const allUsers = await rawUsers();
             const adminCount = allUsers.filter(item => permitted(item) && isAdmin(item)).length;
@@ -182,6 +197,7 @@ export function createService({ getUser, admin, getStore }) {
           const store = getStore({ name: 'arissto-support-v1', consistency: 'strong' });
           const transferred = await transferUserRecords(store, existing.id, user);
           await admin.deleteUser(existing.id);
+          await resourceStore(getStore).delete(privateKeyPath(existing.id));
           return reply({ ok: true, transferred, users: await users() });
         }
 

@@ -80,6 +80,7 @@
         <button class="tab-button" type="button" data-tab-target="implementationsSection">Implementaciones</button>
         <button class="tab-button" type="button" data-tab-target="servicesSection" data-access="services">Facturación</button>
         <button class="tab-button" type="button" data-tab-target="cooperativesSection">Cooperativas</button>
+        <button class="tab-button" id="resourcesTab" type="button" data-tab-target="resourcesSection" hidden>Enlaces y accesos</button>
         <button class="tab-button" type="button" data-tab-target="migrationSection">Migracion</button>
         <button class="tab-button" id="usersTab" type="button" data-tab-target="usersSection" hidden>Usuarios</button>
       </nav>
@@ -445,6 +446,65 @@
           <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Cooperativa</th><th>Persona</th><th>Servicio</th><th>Cantidad</th><th>Precio unitario</th><th>Total</th><th>Factura</th><th>Acciones</th></tr></thead><tbody id="servicesBody"></tbody></table><div class="empty-state" id="servicesEmpty">No hay servicios registrados para estos filtros.</div></div>
           <p class="service-disclaimer">El resumen es informativo para preparar la facturación en administración; no genera una factura fiscal.</p>
         </section>
+        <section class="section-block tab-panel" id="resourcesSection" aria-labelledby="resourcesTitle">
+          <div class="section-heading"><h2 id="resourcesTitle">Enlaces y accesos</h2></div>
+          <div class="resource-switch" role="group" aria-label="Elegir biblioteca">
+            <button type="button" id="showTeamLinks" aria-controls="teamLinksPanel" aria-pressed="true">Enlaces del equipo</button>
+            <button type="button" id="showPrivateVault" aria-controls="privateVaultPanel" aria-pressed="false">Mis accesos privados</button>
+          </div>
+          <div id="teamLinksPanel">
+            <p>Estos enlaces son visibles para todas las cuentas de ARISSTO. Guarda los enlaces confidenciales en Mis accesos privados.</p>
+            <div class="resource-tools">
+              <label>Buscar enlace<input type="search" id="teamLinkSearch" placeholder="Nombre, descripción o sitio" /></label>
+              <label>Categoría<select id="teamLinkFilter"><option value="">Todas</option></select></label>
+              <button class="primary-button" type="button" id="newTeamLink">Añadir enlace</button>
+              <button class="secondary-button" type="button" id="reloadTeamLinks">Actualizar enlaces</button>
+            </div>
+            <p id="teamLinkMessage" role="status"></p>
+            <form id="teamLinkForm" class="resource-form" method="post" hidden>
+              <h3 id="teamLinkFormTitle" class="resource-wide">Añadir enlace</h3>
+              <label>Nombre del recurso<input id="teamLinkTitle" maxlength="150" placeholder="Ej. Manual de cierre mensual" required /></label>
+              <label>Categoría<select id="teamLinkCategory"></select></label>
+              <label class="resource-wide">Enlace compartido<input id="teamLinkUrl" type="url" placeholder="https://" maxlength="2500" required /></label>
+              <label class="resource-wide">¿A qué da acceso?<textarea id="teamLinkDescription" maxlength="600" rows="2"></textarea></label>
+              <div class="resource-actions resource-wide">
+                <button class="primary-button" type="submit">Guardar enlace</button>
+                <button class="secondary-button" type="button" id="cancelTeamLink">Cancelar</button>
+              </div>
+            </form>
+            <ul class="resource-list" id="teamLinkList" aria-label="Enlaces del equipo"></ul>
+          </div>
+          <div id="privateVaultPanel" hidden>
+            <p id="vaultHelp"></p>
+            <p id="vaultMessage" role="status"></p>
+            <button type="button" class="secondary-button" id="retryVault" hidden>Volver a cargar</button>
+            <form id="vaultGate" class="resource-form" method="post" autocomplete="off" hidden>
+              <label>Clave maestra<input type="password" id="vaultPassphrase" autocomplete="off" maxlength="256" required /></label>
+              <label id="vaultConfirmLabel">Confirmar clave maestra<input type="password" id="vaultConfirm" autocomplete="new-password" maxlength="256" /></label>
+              <div class="resource-actions resource-wide"><button class="primary-button" type="submit" id="unlockVault">Abrir mi bóveda</button></div>
+            </form>
+            <div id="vaultContents" hidden>
+              <div class="resource-tools">
+                <label>Buscar en mis accesos<input type="search" id="vaultSearch" autocomplete="off" placeholder="Nombre, usuario o sitio" /></label>
+                <button type="button" class="primary-button" id="newVaultEntry">Añadir acceso privado</button>
+                <button type="button" class="secondary-button" id="lockVault">Bloquear bóveda</button>
+              </div>
+              <form id="vaultEntryForm" class="resource-form" method="post" autocomplete="off" hidden>
+                <h3 class="resource-wide" id="vaultEntryFormTitle">Añadir acceso privado</h3>
+                <label>Nombre del acceso<input id="vaultEntryTitle" maxlength="150" required /></label>
+                <label>Enlace (opcional)<input id="vaultEntryUrl" type="url" maxlength="2500" placeholder="https://" /></label>
+                <label>Usuario o correo<input id="vaultEntryUsername" maxlength="300" autocomplete="off" spellcheck="false" /></label>
+                <label>Contraseña<input id="vaultEntryPassword" type="password" maxlength="1024" autocomplete="new-password" spellcheck="false" /></label>
+                <label class="resource-wide">Notas privadas<textarea id="vaultEntryNotes" maxlength="2000" rows="2" spellcheck="false"></textarea></label>
+                <div class="resource-actions resource-wide">
+                  <button class="primary-button" type="submit">Guardar acceso</button>
+                  <button class="secondary-button" type="button" id="cancelVaultEntry">Cancelar</button>
+                </div>
+              </form>
+              <ul class="resource-list" id="vaultList" aria-label="Mis accesos privados"></ul>
+            </div>
+          </div>
+        </section>
         <section class="section-block tab-panel" id="migrationSection" aria-labelledby="migrationTitle">
           <div class="section-heading">
             <div>
@@ -794,7 +854,7 @@
     <datalist id="cooperativeOptions"></datalist>
     <datalist id="requesterOptions"></datalist>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha256-SERKgtTty1vsDxll+qzd4Y2cF9swY9BCq62i9wXJ9Uo=" crossorigin="anonymous"></script>
     <script src="seed-data.js"></script>
     <script src="app.js"></script>
     <script src="assets/account.js"></script>

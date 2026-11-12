@@ -17,6 +17,7 @@ function fixture() {
   const blobs = new Map();
   let etag = 0;
   const store = {
+    delete: async key => { blobs.delete(key); },
     get: async key => blobs.get(key) || null,
     getWithMetadata: async key => blobs.has(key) ? { data: structuredClone(blobs.get(key)), etag: String(etag) } : null,
     setJSON: async (key, value, condition = {}) => {
@@ -116,6 +117,8 @@ test('cada cuenta cambia su propia clave sin alterar su rol ni las otras cuentas
 
 test('eliminar una cuenta la quita de Identity, invalida su acceso y permite recrear el usuario', async () => {
   const h = fixture(); await ensureAccountPolicy(h.deps);
+  h.blobs.set('private/MCORDERO', { format: 1, ciphertext: 'test-only' });
+  h.blobs.set('private/ADMIN', { format: 1, ciphertext: 'other-account' });
   h.blobs.set('records', applyOperations(emptyData(), [{ collection: 'tasks', id: 'task', action: 'put',
     record: { title: 'Trabajo', owner: 'Mardoqueo', ownerId: 'MCORDERO' } }], { id: 'MCORDERO', roles: ['member'] }));
   const response = await h.as('ADMIN')(request('/api/users', { action: 'delete', id: 'MCORDERO' }));
@@ -124,6 +127,8 @@ test('eliminar una cuenta la quita de Identity, invalida su acceso y permite rec
   assert.equal(h.accounts.some(account => account.id === 'MCORDERO'), false);
   assert.equal((await h.as('MCORDERO')(request('/api/support'))).status, 401);
   assert.equal(h.blobs.get('records').tasks[0].ownerId, 'ADMIN');
+  assert.equal(h.blobs.has('private/MCORDERO'), false);
+  assert.equal(h.blobs.get('private/ADMIN').ciphertext, 'other-account');
   const recreated = await h.as('ADMIN')(request('/api/users', { name: 'Mardoqueo', username: 'MCORDERO', password: '123' }));
   assert.equal(recreated.status, 201);
 });
