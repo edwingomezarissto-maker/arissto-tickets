@@ -255,9 +255,11 @@ const taskFields = {
 
 document.addEventListener("DOMContentLoaded", init);
 let catalogCanEdit = location.protocol === "file:";
+let catalogChoiceExplicit = false;
 
 window.ARISSTO_APP = {
   catalog: () => structuredClone(state.cooperatives),
+  chosenCooperativeId: () => catalogChoiceExplicit ? state.selectedCooperativeId : "",
   projectName: id => window.ARISSTO_TIME?.projectName(id) || 'Arissto Financiero',
   timeItem(kind, id) {
     const row = (kind === 'case' ? state.cases : state.tasks).find(item => item.id === id);
@@ -293,6 +295,7 @@ window.ARISSTO_APP = {
     state.cooperatives = structuredClone(data.cooperatives || []);
     if (!state.cooperatives.some(item => item.id === state.selectedCooperativeId)) {
       state.selectedCooperativeId = state.cooperatives[0]?.id || "";
+      catalogChoiceExplicit = false;
     }
     window.ARISSTO_TIME?.receive(data);
     render();
@@ -315,7 +318,7 @@ window.ARISSTO_APP = {
   },
   editing() {
     return Boolean(document.querySelector('.modal-backdrop[aria-hidden="false"]')) ||
-      Boolean(document.querySelector('#implementationActivityForm:not([hidden]), #implementationForm:not([hidden])')) ||
+      Boolean(document.querySelector('#implementationActivityForm:not([hidden])')) ||
       Boolean(document.activeElement?.closest('#cooperativeForm, #contactForm, #userForm, #implementationTeamForm, #serviceForm'));
   },
   legacy() {
@@ -1781,6 +1784,7 @@ async function handleCooperativeSubmit(event) {
   }
 
   if (!await saveCooperatives()) return;
+  catalogChoiceExplicit = true;
   resetCooperativeForm();
   render();
 }
@@ -1850,6 +1854,7 @@ function handleCooperativeListAction(event) {
   }
 
   state.selectedCooperativeId = cooperative.id;
+  catalogChoiceExplicit = true;
   cooperativeFields.id.value = cooperative.id;
   cooperativeFields.name.value = cooperative.name;
   elements.cancelCooperativeEdit.classList.remove("hidden");

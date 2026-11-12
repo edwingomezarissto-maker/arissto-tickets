@@ -2,6 +2,7 @@ import { activityLate, phaseProgress, derivedPhaseState, localDate } from './imp
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 let data = { implementations: [], cooperatives: [], implementationPeople: [], timeEntries: [] }, user = null, selected = '', busy = false, teamVersion = '';
+let suggestedProjectName = '';
 const current = () => data.implementations.find(row => row.id === selected);
 const name = id => data.implementationPeople.find(person => person.id === id)?.name || (id ? 'Usuario sin acceso actual' : 'Sin asignar');
 const seconds = entry => (entry.segments || []).reduce((sum, part) => sum + Math.max(0, ((part.endedAt ? Date.parse(part.endedAt) : Date.now()) - Date.parse(part.startedAt)) / 1000), 0);
@@ -84,9 +85,48 @@ async function timerAction(body) {
   catch (error) { $('implementationMessage').textContent = error.message; }
   finally { busy = false; }
 }
-$('newImplementation').addEventListener('click', () => { $('implementationForm').hidden = false; options($('implementationCooperative'), data.cooperatives, row => row.name, '', 'Seleccione'); options($('implementationTeam'), data.implementationPeople, row => row.name, [user.id]); $('implementationStart').value ||= localDate(); });
+function updateProjectName() {
+  const cooperative = data.cooperatives.find(row => row.id === $('implementationCooperative').value);
+  const suggestion = cooperative ? `${cooperative.name} – Implementación` : '';
+  const field = $('implementationName');
+  if (suggestion !== suggestedProjectName && (!field.value || field.value === suggestedProjectName)) field.value = suggestion;
+  suggestedProjectName = suggestion;
+}
+
+function syncCooperativeOptions(preferredId) {
+  const select = $('implementationCooperative');
+  const cooperatives = data.cooperatives;
+  const selectedId = cooperatives.some(row => row.id === preferredId) ? preferredId : '';
+  const sameOptions = select.options.length === cooperatives.length + 1 && cooperatives.every((row, index) => {
+    const option = select.options[index + 1];
+    return option.value === row.id && option.textContent === row.name;
+  });
+  if (!sameOptions) options(select, cooperatives, row => row.name, selectedId, 'Seleccione una cooperativa');
+  else if (select.value !== selectedId) select.value = selectedId;
+  updateProjectName();
+}
+
+function refreshDraftCatalog() {
+  syncCooperativeOptions($('implementationCooperative').value || window.ARISSTO_APP.chosenCooperativeId());
+  void window.ARISSTO_CLOUD.refresh();
+}
+
+$('newImplementation').addEventListener('click', () => {
+  if (!user || busy) return;
+  const form = $('implementationForm');
+  if (form.hidden) {
+    form.reset(); suggestedProjectName = '';
+    options($('implementationTeam'), data.implementationPeople, row => row.name, [user.id]);
+    $('implementationStart').value = localDate();
+    form.hidden = false;
+  }
+  refreshDraftCatalog();
+});
+document.addEventListener('arissto:tab', event => {
+  if (event.detail === 'implementationsSection' && !$('implementationForm').hidden) refreshDraftCatalog();
+});
 $('cancelImplementation').addEventListener('click', () => { $('implementationForm').hidden = true; });
-$('implementationCooperative').addEventListener('change', () => { const cooperative = data.cooperatives.find(row => row.id === $('implementationCooperative').value); $('implementationName').value = cooperative ? `${cooperative.name} – Implementación` : ''; });
+$('implementationCooperative').addEventListener('change', updateProjectName);
 $('implementationForm').addEventListener('submit', async event => {
   event.preventDefault(); const id = crypto.randomUUID();
   if (await send({ action: 'implementation-create', id, cooperativeId: $('implementationCooperative').value, name: $('implementationName').value, startDate: $('implementationStart').value, leader: $('implementationLeader').value, cooperativeLeader: $('implementationCoopLeader').value, teamIds: selectedTeam('implementationTeam') }, 'Implementación creada con sus 53 actividades.')) {
@@ -120,7 +160,11 @@ $('implementationPhases').addEventListener('click', event => {
   timerAction(entry ? { action: entry.state === 'running' ? 'timer-pause' : 'timer-resume', entryId: entry.id } : { action: 'timer-start', entryId: crypto.randomUUID(), projectId: project.projectId, itemType: 'implementation', itemId: activity.id, title: activity.title });
 });
 window.ARISSTO_IMPLEMENTATIONS = { receive(snapshot, actor) {
+  if (user?.id !== actor?.id) {
+    $('implementationForm').reset(); $('implementationForm').hidden = true; suggestedProjectName = '';
+  }
   data = structuredClone(snapshot); user = actor;
+  if (!$('implementationForm').hidden) syncCooperativeOptions($('implementationCooperative').value);
   if (!data.implementations.some(row => row.id === selected)) { selected = data.implementations[0]?.id || ''; teamVersion = ''; $('implementationActivityForm').hidden = true; }
   options($('implementationSelect'), data.implementations, row => row.name, selected, 'Seleccione una implementación'); renderProject();
 } };

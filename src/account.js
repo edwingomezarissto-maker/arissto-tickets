@@ -217,9 +217,10 @@ async function refresh() {
   if (!connected || saving || refreshing || passwordMode || window.ARISSTO_APP.editing()) return;
   refreshing = true;
   const currentEpoch = epoch;
+  const before = snapshot;
   try {
     const data = await api('/api/support');
-    if (epoch !== currentEpoch || saving) return;
+    if (epoch !== currentEpoch || saving || snapshot !== before) return;
     if (data.user.id !== user.id) {
       lock('La cuenta cambio en otra pestana. Vuelva a ingresar.');
       return;
@@ -428,7 +429,7 @@ for (const kind of ['case', 'task']) {
 window.addEventListener('online', refresh);
 setInterval(() => { if (!document.hidden) refresh(); }, 60000);
 
-window.ARISSTO_CLOUD = { start, commit, prepareAssignment,
+window.ARISSTO_CLOUD = { start, commit, refresh, prepareAssignment,
   projectAction: body => timeAction(body), timerAction: body => timeAction(body),
   async changeCatalog(body) {
     if (!connected || saving) throw new Error('Espere a que termine la operacion actual y vuelva a intentar.');
